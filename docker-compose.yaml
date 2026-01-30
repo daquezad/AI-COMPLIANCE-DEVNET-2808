@@ -1,0 +1,73 @@
+
+services:
+  slim:
+    image: ghcr.io/agntcy/slim:0.6.1
+    container_name: slim-devnet
+    ports:
+      - "46357:46357"
+    environment:
+      - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
+      - CONFIG_PATH=/config.yaml
+    volumes:
+      - ./config/docker/slim/server-config.yaml:/config.yaml
+    command: ["/slim", "--config", "/config.yaml"]
+
+  # Exchange server App (farm client)
+  # exchange-server:
+  #   build:
+  #     context: ../../..
+  #     dockerfile: agntcy-cnc/docker/Dockerfile.exchange
+  #   image: ghcr.io/agntcy/devnet/provision-exchange:latest
+  #   container_name: exchange-server-provision
+  #   volumes:
+  #     # Mount local git metadata so /build/info can derive latest tag/date in dev
+  #     - ../../../.git:/app/.git:ro
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - FARM_AGENT_HOST=farm-server
+  #     - FARM_AGENT_PORT=9999
+  #     - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT:-NATS}
+  #     - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-nats://nats:4222}
+  #     - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+  #     - IDENTITY_AUTH_ENABLED=${IDENTITY_AUTH_ENABLED:-} # Disabled by default
+  #     - IDENTITY_SERVICE_API_KEY=${IDENTITY_SERVICE_API_KEY_AUCTION_SUPERVISOR:-dummy_api_key}
+  #   ports:
+  #     - "8000:8000"
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    image: ghcr.io/agntcy/devnet/provision-ui:latest
+    container_name: provision-ui
+    environment:
+      # These URLs must be accessible from the BROWSER (not Docker), so use localhost with exposed ports
+      - VITE_PROVISIONING_SUPERVISOR_API_URL=http://localhost:9090
+      # - VITE_MAPPER_API_URL=http://localhost:9092
+      # - VITE_ALLOCATOR_API_URL=http://localhost:9091
+      # - VITE_DEPLOYER_API_URL=http://localhost:9093
+    depends_on:
+      # - provisioning-supervisor
+      # - provisioning-mapper
+      # - provisioning-allocator
+      # - provisioning-deployer
+    ports:
+      - "3002:3000"
+    networks:
+      - default
+
+  provisioning-mapper:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.provision-mapper
+    image: ghcr.io/agntcy/devnet/provisioning-mapper:latest
+    env_file:
+      - .env
+    environment:
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - ENABLE_HTTP=true
+    ports:
+      - "9092:9092"

@@ -1,0 +1,33 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install wget, curl, and ping (iputils)
+RUN apk add --no-cache wget curl iputils
+
+# Copy package.json and package-lock.json, then install dependencies
+# This includes markdown libraries: react-markdown and remark-gfm
+COPY frontend/package.json frontend/package-lock.json ./
+
+# Install dependencies first (includes react-markdown and remark-gfm for markdown rendering)
+RUN npm install --verbose
+
+# Copy application files, including assets
+COPY frontend/ .
+
+# Copy .env file for build (will be overridden by docker-compose environment at runtime)
+COPY frontend/.env .env
+
+# Build the application
+RUN npm run build --verbose
+
+# Clean npm cache to reduce image size
+RUN npm cache clean --force
+
+# Expose port 3000
+EXPOSE 3000
+
+# Copy the script to build and serve the UI
+COPY docker/ui-build-and-serve.sh ./ui-build-and-serve.sh
+# Start the application
+CMD ["sh", "./ui-build-and-serve.sh"]

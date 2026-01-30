@@ -1,0 +1,36 @@
+# Dockerfile.provision-supervisor
+FROM python:3.13.0-slim
+
+# -------------------- System Dependencies --------------------
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        wget \
+        iputils-ping \
+        build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# -------------------- Python Dependencies --------------------
+WORKDIR /app
+
+# Install uv CLI
+RUN pip install --no-cache-dir uv
+
+# Create uv virtual environment
+RUN uv venv -q /venv
+ENV PATH="/venv/bin:$PATH"
+
+# -------------------- Copy Application --------------------
+COPY pyproject.toml uv.lock ./
+# Sync dependencies using uv
+RUN uv sync --locked --no-editable
+
+COPY . .
+
+# -------------------- Environment --------------------
+ENV PYTHONPATH="/app"
+
+# -------------------- Run Application --------------------
+CMD ["uv", "run", "python", "agents/supervisors/provisioning/main.py", "--reload", "--watch", "/app"]
