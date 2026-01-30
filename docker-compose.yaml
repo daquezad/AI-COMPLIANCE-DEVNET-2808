@@ -15,11 +15,11 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.ui
-    image: ghcr.io/agntcy/devnet/provision-ui:latest
-    container_name: provision-ui
+    image: ghcr.io/devnet/compliance-ui:latest
+    container_name: compliance-ui
     environment:
       # These URLs must be accessible from the BROWSER (not Docker), so use localhost with exposed ports
-      - VITE_PROVISIONING_SUPERVISOR_API_URL=http://localhost:9090
+      - VITE_COMPLIANCE_AGENT_API_URL=http://localhost:9090
 
     depends_on:
       - compliance-agent
