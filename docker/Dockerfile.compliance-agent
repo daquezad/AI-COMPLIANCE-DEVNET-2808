@@ -33,4 +33,4 @@ COPY . .
 ENV PYTHONPATH="/app"
 
 # -------------------- Run Application --------------------
-CMD ["uv", "run", "python", "agents/supervisors/provisioning/main.py", "--reload", "--watch", "/app"]
+CMD ["uv", "run", "python", "agents/compliance/main.py", "--reload", "--watch", "/app"]

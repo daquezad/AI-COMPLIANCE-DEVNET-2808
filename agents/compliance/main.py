@@ -23,7 +23,7 @@ from agents.compliance.graph.graph import ComplianceGraph
 from agents.compliance.graph import shared 
 
 
-from config.config import DEFAULT_MESSAGE_TRANSPORT, TRANSPORT_SERVER_ENDPOINT, COMPLIANCE_AGENT_PORT
+from config.config import DEFAULT_MESSAGE_TRANSPORT, TRANSPORT_SERVER_ENDPOINT, COMPLIANCE_AGENT_PORT, COMPLIANCE_AGENT_IP
 from config.logging_config import setup_logging
 
 # -------------------- Logging --------------------
@@ -47,7 +47,7 @@ app.add_middleware(
 )
 
 # -------------------- Graph --------------------
-# provision_graph = ComplianceGraph()
+compliance_graph = ComplianceGraph()
 
 # -------------------- Models --------------------
 class PromptRequest(BaseModel):
@@ -62,7 +62,7 @@ async def handle_stream_prompt(request: PromptRequest):
 
     async def stream_generator():
         try:
-            async for chunk in provision_graph.streaming_serve(
+            async for chunk in compliance_graph.streaming_serve(
                 request.prompt, 
                 thread_id=thread_id
             ):
@@ -94,35 +94,10 @@ async def handle_stream_prompt(request: PromptRequest):
 async def health_check():
     return {"status": "ok"}
 
-
-@app.get("/v1/health")
-async def connectivity_health():
-    try:
-        factory = getattr(shared, "get_factory", lambda: shared.factory)()
-        transport = factory.create_transport(
-            DEFAULT_MESSAGE_TRANSPORT,
-            endpoint=TRANSPORT_SERVER_ENDPOINT,
-            name="default/default/liveness_probe",
-        )
-        await asyncio.wait_for(
-            factory.create_client(
-                "A2A",
-                agent_topic=A2AProtocol.create_agent_topic(AGENT_CARD),
-                transport=transport,
-            ),
-            timeout=30,
-        )
-        return {"status": "alive"}
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=500, detail="Timeout creating A2A client")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
-
-
 @app.get("/transport/config")
 async def get_config():
     return {"transport": DEFAULT_MESSAGE_TRANSPORT.upper()}
 
 # -------------------- Main --------------------
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=COMPLIANCE_AGENT_PORT, reload=True)
+    uvicorn.run("main:app", host=COMPLIANCE_AGENT_IP, port=COMPLIANCE_AGENT_PORT, reload=True)
