@@ -29,6 +29,9 @@ dependencies = [
     "langchain-litellm>=0.3.0",
     "litellm[proxy]==1.75.3",
     "agntcy-app-sdk==0.4.5",
+    "pyats>=25.11",
+    "unicon>=25.11",
+    "genie>=25.11",
 ]
 
 [project.optional-dependencies]

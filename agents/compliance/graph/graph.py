@@ -16,7 +16,7 @@ from common.llm import get_llm
 from agents.prompts.prompts import SYSTEM_PROMPT, ANALYZER_PROMPT
 from agents.compliance.graph.models import RemediationItem, AnalysisResult
 from agents.compliance.tools.lc_tools_list import tools
-from agents.compliance.tools.nso_tools import get_nso_report_details, trigger_nso_compliance_report
+from agents.compliance.tools.nso_lc_tools import get_nso_report_details, trigger_nso_compliance_report
 
 logger = logging.getLogger("devnet.compliance.chat.graph")
 logging.basicConfig(level=logging.INFO)
