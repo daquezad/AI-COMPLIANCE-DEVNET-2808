@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOClient
+from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 
 
 # Initialize the requested logger
@@ -12,7 +12,7 @@ class NSOComplianceManager:
     Methods are structured to be used as individual tools by an LLM agent.
     """
 
-    def __init__(self, client: NSOClient):
+    def __init__(self, client: NSOCLIClient):
         self.client = client
 
     # =========================================================================
@@ -119,6 +119,24 @@ class NSOComplianceManager:
         """Deletes a compliance report definition."""
         logger.warning(f"Deleting compliance report definition: {report_name}")
         return self.client.execute_config([f"delete compliance reports report {report_name}"])
+
+    def list_compliance_report_definitions(self) -> str:
+        """
+        Lists all compliance report DEFINITIONS (not results).
+        
+        Shows the configured reports with their status (running true/false).
+        This is different from list_compliance_reports() which shows executed report results.
+        
+        Returns:
+            NSO CLI output showing all report definitions and their running status.
+            Example output:
+                compliance reports report CUSTOM_COMPLIANCE_PYTHON
+                 status running false
+                compliance reports report weekly-audit
+                 status running false
+        """
+        logger.info("Fetching all compliance report definitions.")
+        return self.client.execute_read("show compliance reports")
 
     # =========================================================================
     # 2. EXECUTION AND RESULTS

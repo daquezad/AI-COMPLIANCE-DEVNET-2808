@@ -23,7 +23,7 @@ import json
 from typing import List, Optional, Dict, Any
 from langchain_core.tools import tool
 
-from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOClient
+from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
 # from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
 
@@ -34,9 +34,9 @@ from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager imp
 logger = logging.getLogger("devnet.compliance.tools.nso")
 
 # --- INITIALIZATION ---
-# NSOClient will auto-generate testbed from environment variables if no path is provided
+# NSOCLIClient will auto-generate testbed from environment variables if no path is provided
 # Required env vars: NSO_HOST, NSO_PORT, NSO_USERNAME, NSO_PASSWORD
-_client = NSOClient()  # Uses environment variables for connection settings
+_client = NSOCLIClient()  # Uses environment variables for connection settings
 _manager = NSOComplianceManager(_client)
 
 # =============================================================================
@@ -274,15 +274,102 @@ def create_nso_compliance_template(
         return {"success": False, "error": str(e)}
 
 
+@tool
+def delete_nso_compliance_report(report_name: str) -> Dict[str, Any]:
+    """
+    Delete a compliance report DEFINITION from NSO.
+    
+    This tool removes a compliance report configuration from NSO. Use this when:
+    - A report is no longer needed
+    - You want to clean up test reports
+    - You need to recreate a report with different settings
+    
+    ⚠️ WARNING: This is a DESTRUCTIVE operation that cannot be undone.
+    The report definition will be permanently removed from NSO.
+    
+    NOTE: This does NOT delete historical report RESULTS (the executed audit data).
+    To remove report results, use a separate cleanup tool.
+    
+    Args:
+        report_name: Name of the compliance report definition to delete (e.g., "weekly-audit", "test-report")
+    
+    Returns:
+        success: True if report was deleted successfully
+        message: Status message confirming deletion
+        report_name: Name of the deleted report
+        nso_output: Raw NSO CLI output for debugging
+    
+    Example Usage:
+        - "Delete the test-audit report" → report_name="test-audit"
+        - "Remove the old IOS-XR compliance report" → report_name="IOS-XR"
+    """
+    logger.info(f"LLM Tool Call: delete_nso_compliance_report -> {report_name}")
+    try:
+        output = _manager.delete_compliance_report(report_name)
+        return {
+            "success": True,
+            "message": f"Report '{report_name}' has been deleted from NSO.",
+            "report_name": report_name,
+            "nso_output": output
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "report_name": report_name}
+
+
+@tool
+def list_nso_compliance_report_definitions() -> Dict[str, Any]:
+    """
+    List all compliance report DEFINITIONS configured in NSO.
+    
+    This tool shows all the report configurations (WHAT to audit), NOT the historical
+    execution results. Use this to see which reports are available to run.
+    
+    DIFFERENCE FROM list_nso_compliance_results:
+    - list_nso_compliance_report_definitions: Shows CONFIGURED reports (the templates)
+    - list_nso_compliance_results: Shows EXECUTED report results (historical audits)
+    
+    PURPOSE: Discover which compliance reports are configured in NSO, including:
+    - Report names available for execution
+    - Running status (whether a report is currently executing)
+    
+    WHEN TO USE:
+    - "What reports can I run?" → Use this tool
+    - "Show me all configured compliance reports"
+    - "List available report definitions"
+    - Before running a report to verify it exists
+    - Before deleting a report to confirm its name
+    
+    Returns:
+        success: True if query was successful
+        data: NSO output showing all report definitions with their status
+    
+    Example Output:
+        compliance reports report CUSTOM_COMPLIANCE_PYTHON
+         status running false
+        compliance reports report weekly-audit
+         status running false
+    """
+    logger.info("LLM Tool Call: list_nso_compliance_report_definitions")
+    try:
+        output = _manager.list_compliance_report_definitions()
+        return {"success": True, "data": output}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # Export the list of tools for LangChain Agent initialization
 # These tools follow a typical compliance workflow:
 # 1. configure_nso_compliance_report - Define what to audit
 # 2. run_nso_compliance_report - Execute the audit
-# 3. list_nso_compliance_results - View audit history
-# 4. create_nso_compliance_template - Create Golden Config templates
+# 3. list_nso_compliance_results - View audit history (executed reports)
+# 4. list_nso_compliance_report_definitions - View configured reports (what can be run)
+# 5. create_nso_compliance_template - Create Golden Config templates
+# 6. delete_nso_compliance_report - Remove report definitions
 nso_compliance_toolset = [
     configure_nso_compliance_report,
     run_nso_compliance_report,
     list_nso_compliance_results,
-    create_nso_compliance_template
+    list_nso_compliance_report_definitions,
+    create_nso_compliance_template,
+    delete_nso_compliance_report
 ]

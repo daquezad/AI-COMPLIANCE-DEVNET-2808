@@ -89,7 +89,7 @@ def generate_testbed_from_env() -> str:
     return temp_file.name
 
 
-class NSOClient:
+class NSOCLIClient:
     """Handles low-level pyATS communication with Cisco NSO."""
 
     def __init__(self, testbed_path: Optional[str] = None, device_name: str = "nso"):

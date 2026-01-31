@@ -25,7 +25,7 @@ import pytest
 import logging
 from typing import Generator
 
-from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOClient
+from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
 
 # Configure logging for test output
@@ -38,18 +38,18 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 @pytest.fixture(scope="module")
-def nso_client() -> Generator[NSOClient, None, None]:
+def nso_client() -> Generator[NSOCLIClient, None, None]:
     """
     Creates an NSO client using environment variables.
     Automatically disconnects after all tests in module complete.
     """
-    client = NSOClient()  # Uses env vars from config
+    client = NSOCLIClient()  # Uses env vars from config
     yield client
     client.disconnect()
 
 
 @pytest.fixture(scope="module")
-def compliance_manager(nso_client: NSOClient) -> NSOComplianceManager:
+def compliance_manager(nso_client: NSOCLIClient) -> NSOComplianceManager:
     """Creates a compliance manager instance for testing."""
     return NSOComplianceManager(nso_client)
 
@@ -369,7 +369,7 @@ if __name__ == "__main__":
     print("=" * 70)
     
     # Initialize client and manager
-    client = NSOClient()
+    client = NSOCLIClient()
     manager = NSOComplianceManager(client)
     
     try:
@@ -492,9 +492,9 @@ if __name__ == "__main__":
         # print(result)
         
         # Delete a report definition
-        # print("\n[TEST] Delete CUSTOM-DATE-USER report...")
-        # result = manager.delete_compliance_report("CUSTOM-DATE-USER")
-        # print(result)
+        print("\n[TEST] Delete CUSTOM-DATE-USER report...")
+        result = manager.delete_compliance_report("IOS-XR")
+        print(result)
         
         # Delete a template
         # print("\n[TEST] Delete internal-dns template...")
