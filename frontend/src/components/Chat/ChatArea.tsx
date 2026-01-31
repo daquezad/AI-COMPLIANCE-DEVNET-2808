@@ -224,7 +224,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Scrollable messages area */}
       <div
         ref={scrollContainerRef}
-        className="flex w-full flex-1 flex-col items-center gap-2 px-4 sm:px-8 md:px-16 lg:px-[120px] py-2 overflow-y-auto relative pb-[140px]"
+        className="flex w-full flex-1 flex-col items-center gap-2 px-2 sm:px-4 md:px-6 lg:px-8 xl:px-12 py-2 overflow-y-auto relative pb-[140px]"
       >
         {/* Scroll to bottom button */}
         {showScrollButton && (
@@ -238,12 +238,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         )}
         {/* Conversational Message History */}
         {!isMinimized && messages.length > 0 && pattern === "provisioning" && (
-          <div className="mb-4 flex w-full max-w-[900px] flex-col gap-4 p-6">
+          <div className="mb-4 flex w-full max-w-[95%] sm:max-w-[90%] md:max-w-[85%] lg:max-w-[80%] xl:max-w-[1400px] flex-col gap-4 p-6">
             {messages.map((message, index) => (
               <div key={message.id} className="flex w-full flex-col gap-3 animate-fadeIn">
                 {message.role === "user" ? (
                   <div className="flex w-full justify-end">
-                    <div className="max-w-[80%] rounded-2xl rounded-br-md bg-gradient-to-r from-[#834DD7] to-[#58C0D0] px-4 py-3 shadow-md">
+                    <div className="max-w-[85%] sm:max-w-[80%] md:max-w-[75%] rounded-2xl rounded-br-md bg-gradient-to-r from-[#834DD7] to-[#58C0D0] px-4 py-3 shadow-md">
                       <p className="text-white font-inter text-base leading-relaxed">{message.content}</p>
                     </div>
                   </div>
@@ -256,7 +256,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         className="h-6 w-6 brightness-0 invert"
                       />
                     </div>
-                    <div className="flex max-w-[85%] flex-1 flex-col items-start justify-center rounded-2xl rounded-tl-md bg-chat-background px-4 py-3 shadow-sm border border-node-background/30">
+                    <div className="flex max-w-[90%] sm:max-w-[85%] flex-1 flex-col items-start justify-center rounded-2xl rounded-tl-md bg-chat-background px-4 py-3 shadow-sm border border-node-background/30">
                       <div className={cn(
                         "markdown-content break-words font-inter text-base leading-relaxed",
                         message.id === "loading-placeholder" && "thinking-message"
