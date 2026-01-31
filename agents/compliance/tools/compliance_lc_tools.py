@@ -25,10 +25,10 @@ from langchain_core.tools import tool
 
 from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
-from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOError
+# from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
 
 
-from exceptions import NSOError
+# from exceptions import NSOCLIError
 
 # Initialize Logger
 logger = logging.getLogger("devnet.compliance.tools.nso")
