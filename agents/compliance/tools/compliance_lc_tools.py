@@ -49,10 +49,15 @@ def configure_nso_compliance_report(
     device_check_all: bool = False,
     device_check_devices: Optional[List[str]] = None,
     device_check_templates: Optional[List[str]] = None,
-    service_check_all: bool = False
+    service_check_all: bool = False,
+    dry_run: bool = True
 ) -> Dict[str, Any]:
     """
     Step 1 of Compliance Workflow: Create or update a compliance report DEFINITION in NSO.
+    
+    IMPORTANT WORKFLOW - TWO-STEP PROCESS:
+    1. FIRST CALL with dry_run=True (default): Preview what will be configured. Show output to user for confirmation.
+    2. SECOND CALL with dry_run=False: Actually commit the configuration after user confirms.
     
     This tool DOES NOT run the compliance check - it only defines WHAT should be checked.
     After configuring, use 'run_nso_compliance_report' to execute the actual audit.
@@ -77,27 +82,48 @@ def configure_nso_compliance_report(
         device_check_devices: List of specific device names to audit. Mutually exclusive with device_check_all.
         device_check_templates: List of compliance template names to validate devices against.
         service_check_all: True to verify all service instances are synchronized.
+        dry_run: If True (default), preview changes without committing. If False, commit the configuration.
     
     Returns:
-        success: True if configuration was committed to NSO
-        message: Confirmation of the configured report definition
-        nso_output: Raw NSO CLI output for debugging
+        success: True if operation completed
+        message: Status message
+        dry_run: Whether this was a dry-run (preview) or actual commit
+        nso_output: NSO CLI output showing the configuration or dry-run preview
+        requires_confirmation: True if dry_run was True and user should confirm before committing
     
-    Example Usage:
-        - "Check all devices against the NTP template" → device_check_all=True, device_check_templates=["ntp-standard"]
-        - "Audit only core routers" → device_check_devices=["core-r1", "core-r2"]
+    Example Workflow:
+        1. Call with dry_run=True → Show preview to user → Ask "Do you want to apply this configuration?"
+        2. If user confirms → Call again with dry_run=False to commit
     """
-    logger.info(f"LLM Tool Call: configure_nso_compliance_report -> {report_name}")
+    logger.info(f"LLM Tool Call: configure_nso_compliance_report -> {report_name} (dry_run={dry_run})")
     try:
         output = _manager.configure_compliance_report(
             report_name=report_name,
             device_check_all=device_check_all,
             device_check_devices=device_check_devices,
             device_check_templates=device_check_templates,
-            service_check_all=service_check_all
+            service_check_all=service_check_all,
+            dry_run=dry_run
         )
-        return {"success": True, "message": f"Report '{report_name}' configured.", "nso_output": output}
-    except NSOError as e:
+        
+        if dry_run:
+            return {
+                "success": True,
+                "message": f"DRY-RUN: Preview of report '{report_name}' configuration. No changes committed yet.",
+                "dry_run": True,
+                "requires_confirmation": True,
+                "nso_output": output,
+                "next_step": "Ask user to confirm. If approved, call again with dry_run=False to commit."
+            }
+        else:
+            return {
+                "success": True,
+                "message": f"Report '{report_name}' has been configured and committed to NSO.",
+                "dry_run": False,
+                "requires_confirmation": False,
+                "nso_output": output
+            }
+    except Exception as e:
         return {"success": False, "error": str(e)}
 
 

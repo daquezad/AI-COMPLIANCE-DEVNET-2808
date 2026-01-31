@@ -397,7 +397,7 @@ if __name__ == "__main__":
         
         # Test: Check all services
         print("\n[TEST] Configure service-check-all report...")
-        result = manager.configure_compliance_report("service-check-all-pytest", service_check_all=True)
+        result = manager.configure_compliance_report("service-check-all-pytest-dry", service_check_all=True, dry_run=True)
         print(result)
         
         # Test: Check specific service types

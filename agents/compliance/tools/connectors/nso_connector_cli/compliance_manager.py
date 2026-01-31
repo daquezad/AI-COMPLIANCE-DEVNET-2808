@@ -35,8 +35,31 @@ class NSOComplianceManager:
         service_check_select_xpath: Optional[str] = None,
         service_current_out_of_sync: bool = True,
         service_historic_changes: bool = True,
+        dry_run: bool = False,
     ) -> str:
-        """Configures or updates a compliance report definition in NSO."""
+        """
+        Configures or updates a compliance report definition in NSO.
+        
+        Args:
+            report_name: Name of the compliance report
+            device_check_all: Check all devices
+            device_check_devices: List of specific devices to check
+            device_check_device_groups: List of device groups to check
+            device_check_select_xpath: XPath to select devices
+            device_check_templates: List of compliance templates to check against
+            device_current_out_of_sync: Check current sync status (default: True)
+            device_historic_changes: Include historic changes (default: True)
+            service_check_all: Check all services
+            service_check_services: List of specific services to check
+            service_check_service_types: List of service types to check
+            service_check_select_xpath: XPath to select services
+            service_current_out_of_sync: Check service sync status (default: True)
+            service_historic_changes: Include service historic changes (default: True)
+            dry_run: If True, preview changes without committing (default: False)
+        
+        Returns:
+            NSO CLI output showing the configuration result or dry-run preview
+        """
         base = f"compliance reports report {report_name}"
         cmds = []
 
@@ -82,8 +105,8 @@ class NSOComplianceManager:
             if not service_historic_changes:
                 cmds.append(f"set {base} service-check historic-changes false")
 
-        logger.info(f"Applying configuration for report definition: {report_name}")
-        return self.client.execute_config(cmds)
+        logger.info(f"Applying configuration for report definition: {report_name} (dry_run={dry_run})")
+        return self.client.execute_config(cmds, dry_run=dry_run)
 
     def show_compliance_report_config(self, report_name: Optional[str] = None) -> str:
         """Shows the configuration of a specific report or all reports."""

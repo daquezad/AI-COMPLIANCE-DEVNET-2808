@@ -152,18 +152,93 @@ class NSOClient:
         logger.debug(f"Executing operational command: {command}")
         return self.device.execute(command)
 
-    def execute_config(self, commands: List[str]) -> str:
+    def execute_config_dry_run(self, commands: List[str]) -> str:
+        """
+        Executes configuration commands in dry-run mode (preview only, no commit).
+        
+        Follows the NSO J-style CLI workflow:
+        1. config - enter configuration mode terminal
+        2. Execute set commands
+        3. top - return to config root
+        4. commit dry-run outformat cli - preview changes
+        5. exit + no - discard uncommitted changes
+        
+        Args:
+            commands: List of configuration commands to execute
+        
+        Returns:
+            Dry-run output showing what would be configured (CLI diff format)
+        """
+        from unicon.eal.dialogs import Dialog, Statement
+        
+        self.connect()
+        logger.info(f"Starting DRY-RUN config transaction with {len(commands)} commands")
+        
+        try:
+            # Build dialog to handle the "Uncommitted changes" prompt
+            # When exiting config mode with uncommitted changes, NSO asks:
+            # "Uncommitted changes found, commit them? [yes/no/CANCEL]"
+            uncommitted_dialog = Dialog([
+                Statement(
+                    pattern=r'Uncommitted changes found.*\[yes/no/CANCEL\]',
+                    action='sendline(no)',
+                    loop_continue=True
+                ),
+                Statement(
+                    pattern=r'commit them\?.*\[yes,no\]',
+                    action='sendline(no)',
+                    loop_continue=True
+                )
+            ])
+            
+            # Step 1: Enter config mode
+            self.device.execute("config")
+            logger.debug("Entered config mode")
+            
+            # Step 2: Execute all set commands
+            for cmd in commands:
+                self.device.execute(cmd)
+                logger.debug(f"Executed: {cmd}")
+            
+            # Step 3: Go to top level
+            self.device.execute("top")
+            
+            # Step 4: Run commit dry-run to get the preview
+            dry_run_output = self.device.execute("commit dry-run outformat cli")
+            logger.debug(f"Dry-run output:\n{dry_run_output}")
+            
+            # Step 5: Exit config mode WITHOUT committing
+            # Use dialog to handle the confirmation prompt
+            self.device.execute("exit", reply=uncommitted_dialog)
+            logger.debug("Exited config mode (changes discarded)")
+            
+            return dry_run_output
+            
+        except Exception as e:
+            logger.exception("Unexpected error during NSO dry-run configuration.")
+            # Try to recover and exit config mode
+            try:
+                self.device.execute("exit", timeout=5)
+            except Exception:
+                pass
+            raise NSOCLICommandError(str(e))
+
+    def execute_config(self, commands: List[str], dry_run: bool = False) -> str:
         """
         Executes configuration commands using NSO's configure service.
         
-        Uses unicon's configure() service which properly handles:
-        - Entering config mode
-        - Executing commands
-        - Committing changes
-        - Exiting config mode
+        Args:
+            commands: List of configuration commands to execute
+            dry_run: If True, performs 'commit dry-run outformat cli' to preview changes without applying
+        
+        Returns:
+            Command output string (for dry_run: CLI diff format showing what would change)
         """
+        if dry_run:
+            return self.execute_config_dry_run(commands)
+        
         self.connect()
-        logger.info(f"Starting config transaction with {len(commands)} commands.")
+        logger.info(f"Starting config transaction with {len(commands)} commands. dry_run={dry_run}")
         
         try:
             # Use unicon's configure service - it handles config mode entry/exit properly
