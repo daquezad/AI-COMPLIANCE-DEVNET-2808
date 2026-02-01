@@ -26,7 +26,7 @@ from langchain_core.tools import tool
 from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
 from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
-from agents.compliance.tools.connectors.nso_connector_cli.report_downloader import (
+from agents.compliance.tools.connectors.nso_connector_jsonrpc.report_downloader import (
     download_and_preprocess_report,
     get_report_downloader,
     preprocess_compliance_report
@@ -146,7 +146,7 @@ def configure_nso_compliance_report(
 @tool
 def run_nso_compliance_report(
     report_name: str,
-    outformat: str = "text",
+    outformat: str = "html",
     title: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -675,8 +675,8 @@ def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
     
     Args:
         report_url_or_id: Either:
-            - Full URL: "http://localhost:8080/compliance-reports/report_2025-10-09T13:48:32.txt"
-            - Report ID: "5" or "2025-10-09T13:48:32.663282+00:00.txt"
+            - Full URL: "http://localhost:8080/compliance-reports/report_2025-10-09T13:48:32.html"
+            - Report ID: "5" or "2025-10-09T13:48:32.663282+00:00.html"
     
     Returns:
         success: True if download was successful
@@ -698,7 +698,8 @@ def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
                 "filepath": filepath,
                 "content": content,
                 "report_id": report_url_or_id,
-                "message": f"Report downloaded successfully to {filepath}"
+                "report_url": report_url_or_id if report_url_or_id.startswith("http") else None,
+                "message": f"Report downloaded and preprocessed successfully. Ready for analysis."
             }
         else:
             return {
@@ -743,5 +744,5 @@ nso_compliance_toolset = [
     remove_nso_compliance_report_results,
     list_nso_service_types,
     list_nso_device_groups,
-    download_nso_compliance_report
+    download_nso_compliance_report,
 ]

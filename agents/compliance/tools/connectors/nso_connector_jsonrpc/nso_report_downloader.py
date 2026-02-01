@@ -1,20 +1,19 @@
 """
-NSO Compliance Report Downloader.
+NSO Report Downloader Client.
 
 Downloads compliance report files from NSO using JSON-RPC authentication.
-The reports are saved locally for preprocessing before LLM analysis.
 """
 import os
 import logging
 import requests
 from typing import Optional, Tuple
 from pathlib import Path
-from config.config import  NSO_PASSWORD, NSO_JSONRPC_PORT, NSO_HOST_DOWNLOAD, NSO_USERNAME, NSO_PROTOCOL
+from config.config import NSO_PASSWORD, NSO_JSONRPC_PORT, NSO_HOST_DOWNLOAD, NSO_USERNAME, NSO_PROTOCOL
+
 logger = logging.getLogger("devnet.compliance.tools.nso.downloader")
 
 # Default directory for downloaded reports (can be overridden by env var)
 REPORTS_DOWNLOAD_DIR = os.getenv("NSO_REPORTS_DIR", "/tmp/compliance-reports")
-
 
 
 class NSOReportDownloader:
@@ -144,7 +143,7 @@ class NSOReportDownloader:
         
         Args:
             report_url: Full URL to the report file 
-                       (e.g., "http://localhost:8080/compliance-reports/report_2025-10-09T13:48:32.txt")
+                       (e.g., "http://localhost:8080/compliance-reports/report_2025-10-09T13:48:32.html")
                        OR just the report filename/path after the base URL
         
         Returns:
@@ -163,7 +162,7 @@ class NSOReportDownloader:
         if report_url.startswith("http"):
             full_url = report_url
         else:
-            # Assume it's a path like "/compliance-reports/report_xxx.txt"
+            # Assume it's a path like "/compliance-reports/report_xxx.html"
             full_url = f"{self.base_url}{report_url}"
         
         # Extract filename from URL
@@ -203,7 +202,7 @@ class NSOReportDownloader:
             report_id: The report identifier. Can be:
                 - Just the timestamp: "2025-10-09T13:48:32.663282+00:00"
                 - With prefix: "report_2025-10-09T13:48:32.663282+00:00"
-                - Full filename: "report_2025-10-09T13:48:32.663282+00:00.txt"
+                - Full filename: "report_2025-10-09T13:48:32.663282+00:00.html"
                 - Numeric ID: "5"
         
         Returns:
@@ -212,16 +211,16 @@ class NSOReportDownloader:
         # Clean up the report_id - remove prefix/suffix if already present
         clean_id = report_id
         
-        # Remove .txt suffix if present
-        if clean_id.endswith('.txt'):
+        # Remove .html suffix if present
+        if clean_id.endswith('.html'):
             clean_id = clean_id[:-4]
         
         # Remove report_ prefix if present
         if clean_id.startswith('report_'):
             clean_id = clean_id[7:]  # len('report_') = 7
         
-        # NSO compliance reports are at /compliance-reports/report_<id>.txt
-        report_path = f"/compliance-reports/report_{clean_id}.txt"
+        # NSO compliance reports are at /compliance-reports/report_<id>.html
+        report_path = f"/compliance-reports/report_{clean_id}.html"
         logger.info(f"Constructed report path: {report_path}")
         return self.download_report(report_path)
     
@@ -234,44 +233,6 @@ class NSOReportDownloader:
         """Context manager exit."""
         self._logout()
 
-
-# =============================================================================
-# REPORT PREPROCESSING
-# =============================================================================
-
-def preprocess_compliance_report(report_content: str) -> str:
-    """
-    Preprocess the compliance report before passing to LLM for analysis.
-    
-    This function can be used to:
-    - Remove sensitive information
-    - Filter out irrelevant sections
-    - Normalize the format
-    - Reduce token count by removing boilerplate
-    
-    For now, this is a pass-through function that returns the content as-is.
-    
-    Args:
-        report_content: Raw content of the compliance report
-    
-    Returns:
-        Preprocessed report content ready for LLM analysis
-    """
-    # TODO: Implement preprocessing logic as needed
-    # Examples of future preprocessing:
-    # - Remove header/footer boilerplate
-    # - Strip timestamps if not needed
-    # - Remove sections that are always compliant
-    # - Anonymize device names if required
-    # - Compress repeated patterns
-    
-    # For now, just pass through unchanged
-    return report_content
-
-
-# =============================================================================
-# CONVENIENCE FUNCTIONS
-# =============================================================================
 
 def get_report_downloader() -> NSOReportDownloader:
     """
@@ -305,42 +266,3 @@ def get_report_downloader() -> NSOReportDownloader:
         verify_ssl=os.getenv("NSO_VERIFY_SSL", "false").lower() == "true",
         download_dir=download_dir
     )
-
-
-def download_and_preprocess_report(report_url_or_id: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Convenience function to download and preprocess a compliance report.
-    
-    Args:
-        report_url_or_id: Can be:
-            - Full URL: "http://x.x.x.x:8080/compliance-reports/report_xxx.txt"
-            - Relative path: "/compliance-reports/report_xxx.txt"
-            - Full filename: "report_2026-02-01T01:34:34.241829+00:00.txt"
-            - Just timestamp ID: "2026-02-01T01:34:34.241829+00:00"
-            - Numeric ID: "5"
-    
-    Returns:
-        Tuple of (filepath, preprocessed_content) or (None, None) if failed
-    """
-    downloader = get_report_downloader()
-    
-    try:
-        # Determine if it's a URL, path, or ID
-        if report_url_or_id.startswith("http"):
-            # Full URL
-            filepath, content = downloader.download_report(report_url_or_id)
-        elif report_url_or_id.startswith("/"):
-            # Relative path starting with /
-            filepath, content = downloader.download_report(report_url_or_id)
-        else:
-            # Could be a filename or an ID - download_report_by_id handles both
-            filepath, content = downloader.download_report_by_id(report_url_or_id)
-        
-        if content:
-            preprocessed = preprocess_compliance_report(content)
-            return filepath, preprocessed
-        
-        return None, None
-        
-    finally:
-        downloader._logout()

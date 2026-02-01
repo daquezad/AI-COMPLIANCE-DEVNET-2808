@@ -17,7 +17,7 @@ from agents.prompts.prompts import SYSTEM_PROMPT, ANALYZER_PROMPT
 from agents.compliance.graph.models import RemediationItem, AnalysisResult
 from agents.compliance.tools.lc_tools_list import tools
 from agents.compliance.tools.nso_lc_tools import get_nso_report_details, trigger_nso_compliance_report
-from agents.compliance.tools.connectors.nso_connector_cli.report_downloader import (
+from agents.compliance.tools.connectors.nso_connector_jsonrpc.report_downloader import (
     download_and_preprocess_report,
     preprocess_compliance_report
 )
@@ -182,10 +182,9 @@ class ComplianceGraph:
         
         Workflow:
         1. Extract report_id/URL from tool message or state
-        2. Download the report file from NSO via JSON-RPC
-        3. Preprocess the report content (remove sensitive data, normalize format)
-        4. Pass to LLM for structured analysis
-        5. Generate remediation plan
+        2. Download and preprocess the report file from NSO via JSON-RPC
+        3. Pass preprocessed content to LLM for structured analysis
+        4. Generate remediation plan and forward to planner node
         """
         # Extract report_id and report_url from the tool message or state
         report_id = state.report_id
@@ -232,15 +231,17 @@ class ComplianceGraph:
         logger.info(f"Analyzer: Processing report ID: {report_id}, URL: {report_url}")
         
         try:
-            # Step 1: Download the report if we don't have content yet
+            # Step 1: Download and preprocess the report if we don't have content yet
             if not report_content:
-                logger.info(f"Downloading report from NSO...")
+                logger.info(f"Downloading and preprocessing report from NSO...")
                 
                 # Use URL if available, otherwise use report_id
                 download_target = report_url if report_url else report_id
-                filepath, report_content = download_and_preprocess_report(download_target)
                 
-                if not report_content:
+                # download_and_preprocess_report handles both download AND preprocessing (HTML->text, removes Details section)
+                filepath, preprocessed_content = download_and_preprocess_report(download_target)
+                
+                if not preprocessed_content:
                     # Fallback to the old method if download fails
                     logger.warning("Download failed, falling back to get_nso_report_details")
                     report_result = get_nso_report_details.invoke({"report_id": report_id})
@@ -252,23 +253,24 @@ class ComplianceGraph:
                         }
                     
                     report_data = report_result.get('report', {})
-                    report_content = json.dumps(report_data, indent=2)
+                    preprocessed_content = json.dumps(report_data, indent=2)
                 else:
-                    logger.info(f"Report downloaded successfully to: {filepath}")
+                    logger.info(f"Report downloaded and preprocessed successfully. File: {filepath}, Content length: {len(preprocessed_content)} chars")
+            else:
+                # Content already exists in state, preprocess it
+                preprocessed_content = preprocess_compliance_report(report_content)
             
-            # Step 2: Preprocess the report content
-            # (preprocess_compliance_report is currently a pass-through but can be extended)
-            preprocessed_content = preprocess_compliance_report(report_content)
-            
-            # Step 3: Use LLM with structured output to analyze the report
+            # Step 2: Use LLM with structured output to analyze the preprocessed report
             analyzer_llm = self.llm.with_structured_output(AnalysisResult)
             
             analysis_prompt = ANALYZER_PROMPT.format(report_data=preprocessed_content)
+            logger.info(f"Sending preprocessed report to LLM for analysis ({len(preprocessed_content)} chars)")
+            
             analysis_result = await analyzer_llm.ainvoke([
                 SystemMessage(content=analysis_prompt)
             ])
             
-            # Step 4: Convert analysis result to remediation items with proper status
+            # Step 3: Convert analysis result to remediation items with proper status
             remediation_plan = []
             for item in analysis_result.remediation_items:
                 remediation_item = RemediationItem(
@@ -282,8 +284,9 @@ class ComplianceGraph:
                 )
                 remediation_plan.append(remediation_item)
             
-            logger.info(f"Analyzer: Found {len(remediation_plan)} remediation items")
+            logger.info(f"Analyzer: Found {len(remediation_plan)} remediation items. Forwarding to planner node.")
             
+            # Step 4: Return state updates to be passed to planner node
             return {
                 "report_id": report_id,
                 "report_url": report_url,
@@ -291,7 +294,7 @@ class ComplianceGraph:
                 "summary": analysis_result.summary,
                 "remediation_plan": remediation_plan,
                 "analysis_complete": True,
-                "messages": [AIMessage(content=f"🔍 **Analysis Complete**\n\n**Devices:** {analysis_result.total_devices} total, {analysis_result.non_compliant_devices} non-compliant\n\nFound **{len(remediation_plan)}** remediation items. Building plan...")]
+                "messages": [AIMessage(content=f"🔍 **Analysis Complete**\n\n**Devices:** {analysis_result.total_devices} total, {analysis_result.non_compliant_devices} non-compliant\n\nFound **{len(remediation_plan)}** remediation items. Building remediation plan...")]
             }
             
         except Exception as e:

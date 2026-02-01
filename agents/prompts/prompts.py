@@ -172,7 +172,7 @@ COMPLIANCE REPORT DATA:
 Your task:
 1. Identify all non-compliant devices and their specific violations
 2. Determine the severity of each violation (critical issues should be marked as such)
-3. For each violation, suggest a remediation action
+3. For each violation, suggest a remediation action (no compliant service -> re-deploy, out-of-sync -> sync-to, template not in device -> apply template)
 4. Provide an executive summary of the compliance status
 
 Return your analysis in a structured format with:

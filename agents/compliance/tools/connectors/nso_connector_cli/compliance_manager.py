@@ -105,6 +105,18 @@ class NSOComplianceManager:
             if not service_historic_changes:
                 cmds.append(f"set {base} service-check historic-changes false")
 
+        # Validate that at least one check path is configured
+        has_device_check = any([device_check_all, device_check_devices, device_check_device_groups, device_check_select_xpath])
+        has_service_check = any([service_check_all, service_check_services, service_check_service_types, service_check_select_xpath])
+        
+        if not has_device_check and not has_service_check:
+            raise ValueError(
+                f"Report '{report_name}' has no targets configured. "
+                "You must specify at least one of: device_check_all, device_check_devices, "
+                "device_check_device_groups, service_check_all, or service_check_service_types. "
+                "NSO will reject reports with 'invalid path' if no check targets are defined."
+            )
+
         logger.info(f"Applying configuration for report definition: {report_name} (dry_run={dry_run})")
         return self.client.execute_config(cmds, dry_run=dry_run)
 
@@ -142,15 +154,51 @@ class NSOComplianceManager:
     # 2. EXECUTION AND RESULTS
     # =========================================================================
 
+    def _validate_report_has_paths(self, report_name: str) -> None:
+        """
+        Validates that a report definition has at least one device-check or service-check path.
+        Raises ValueError if the report is misconfigured.
+        """
+        try:
+            config = self.show_compliance_report_config(report_name)
+            
+            # Check if report exists
+            if "No entries found" in config or not config.strip():
+                raise ValueError(
+                    f"Report '{report_name}' does not exist. "
+                    "Use 'configure_nso_compliance_report' to create it first with device or service targets."
+                )
+            
+            # Check for device-check or service-check configuration
+            has_device_check = "device-check" in config
+            has_service_check = "service-check" in config
+            
+            if not has_device_check and not has_service_check:
+                raise ValueError(
+                    f"Report '{report_name}' has no targets configured (missing device-check or service-check). "
+                    "NSO returns 'invalid path' for reports without targets. "
+                    "Please reconfigure the report with 'configure_nso_compliance_report' and specify "
+                    "device_check_all=True, device_check_devices, device_check_device_groups, "
+                    "service_check_all=True, or service_check_service_types."
+                )
+        except Exception as e:
+            if "ValueError" in str(type(e)):
+                raise
+            logger.warning(f"Could not validate report '{report_name}': {e}")
+            # Continue anyway - let NSO report the actual error
+
     def run_compliance_report(
         self,
         report_name: str,
         title: Optional[str] = None,
         from_time: Optional[str] = None,
         to_time: Optional[str] = None,
-        outformat: str = "text",
+        outformat: str = "html",
     ) -> str:
         """Executes a compliance report and returns the result metadata."""
+        # Validate report has proper configuration before running
+        self._validate_report_has_paths(report_name)
+        
         cmd_parts = [f"request compliance reports report {report_name} run"]
         if title: cmd_parts.append(f'title "{title}"')
         if from_time: cmd_parts.append(f"from {from_time}")
