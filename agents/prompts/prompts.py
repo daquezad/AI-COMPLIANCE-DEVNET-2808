@@ -58,11 +58,8 @@ cli {
 | Action | Tool | Behavior |
 |--------|------|----------|
 | Run report NOW | `run_nso_compliance_report` | Executes immediately → Analyzer → Planner flow |
-| Schedule for later | `schedule_nso_compliance_report` | 🚧 **COMING SOON** - David is still working on this feature |
+| Schedule for later | `schedule_nso_compliance_report` | Schedule report accordingly on cwm → informs back to agent and in webex |
 
-**⚠️ SCHEDULING FEATURE NOTICE:**
-When user asks to "schedule" a compliance report, politely inform them:
-"The scheduling feature is currently under development by David. For now, I can only run compliance reports immediately. Would you like me to run a report now instead?"
 
 ### THE ReAct LOOP & NODE FLOW
 - **Thought (Analyzer):** Identifying violations from the NSO report.

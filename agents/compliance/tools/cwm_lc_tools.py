@@ -12,6 +12,10 @@ from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import (
     get_cwm_workflow as _get_cwm_workflow,
     execute_cwm_workflow as _execute_cwm_workflow,
     create_cwm_job as _create_cwm_job,
+    schedule_compliance_audit as _schedule_compliance_audit,
+    schedule_remediation_workflow as _schedule_remediation_workflow,
+    list_cwm_schedules as _list_cwm_schedules,
+    delete_cwm_schedule as _delete_cwm_schedule,
 )
 
 logger = logging.getLogger("devnet.compliance.tools.cwm")
@@ -281,6 +285,218 @@ def create_cwm_job(
     )
 
 
+@tool
+def schedule_compliance_audit(
+    report_name: str,
+    schedule_frequency: str,
+    title: Optional[str] = None,
+    trigger_immediately: bool = False,
+    note: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Schedule a recurring compliance audit to run automatically.
+    
+    USE THIS TOOL when the user wants to:
+    - Schedule a compliance audit to run periodically (daily, weekly, monthly)
+    - Set up automated compliance checks
+    - Create a recurring compliance report schedule
+    
+    This schedules the AUDIT_Compliance_Report workflow in Crosswork Workflow Manager (CWM)
+    to automatically run NSO compliance reports on a recurring basis.
+    
+    Args:
+        report_name: Name of the NSO compliance report to schedule (must exist in NSO).
+                     Use list_compliance_report_definitions to find available reports.
+        schedule_frequency: How often to run the audit. MUST be one of:
+                           - "DAILY": Run every day at 6:00 AM UTC
+                           - "WEEKLY": Run every Monday at 6:00 AM UTC  
+                           - "MONTHLY": Run on the 1st of every month at 6:00 AM UTC
+        title: Optional custom title for the report (default: uses report_name)
+        trigger_immediately: If True, runs the audit immediately AND schedules future runs.
+                            If False (default), only schedules future runs.
+        note: Optional description for the schedule (default: auto-generated)
+    
+    Returns:
+        Dictionary containing:
+        - success: True if schedule was created successfully
+        - schedule_id: Unique ID of the created schedule (starts with 'AI-')
+        - job_name: Generated job name (format: AUDIT-{FREQUENCY}-{report_name})
+        - cron_expression: The cron expression used for scheduling
+        - schedule_frequency: The frequency (DAILY/WEEKLY/MONTHLY)
+        - report_name: The report being scheduled
+        - error: Error message if scheduling failed
+    
+    Example Usage:
+        - "Schedule a daily compliance audit for the ntp-audit report"
+        - "Set up weekly automated compliance checks for device-baseline report"
+        - "Create a monthly compliance audit schedule and run it now"
+    
+    Notes:
+        - Only DAILY, WEEKLY, or MONTHLY frequencies are supported
+        - Scheduled audits use fixed tags: AI, AUDIT, daquezad, DEVNET
+        - Schedule IDs always start with 'AI-' for safety (can be deleted with delete_cwm_schedule)
+    """
+    logger.info(f"LLM Tool Call: schedule_compliance_audit -> {report_name} ({schedule_frequency})")
+    
+    return _schedule_compliance_audit(
+        report_name=report_name,
+        schedule_frequency=schedule_frequency,
+        title=title,
+        trigger_immediately=trigger_immediately,
+        note=note
+    )
+
+
+@tool
+def schedule_remediation_workflow(
+    scheduled_datetime: str,
+    description: str,
+    devices: Optional[str] = None,
+    remediation_items: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Schedule a ONE-TIME remediation workflow at a specific date and time.
+    
+    USE THIS TOOL when the user wants to:
+    - Schedule a remediation to run at a specific future date/time
+    - Plan a maintenance window for applying fixes
+    - Schedule configuration changes for a specific time
+    
+    This schedules the FIX_Compliance_Remediation workflow in Crosswork Workflow Manager (CWM)
+    to run ONCE at the specified date and time. NO RECURRENCE - this is for one-time execution only.
+    
+    Args:
+        scheduled_datetime: The exact date and time to run the remediation.
+                           Format: "YYYY-MM-DD HH:MM" (24-hour format)
+                           Examples: "2026-02-15 10:30", "2026-03-01 06:00"
+        description: Short, descriptive summary of the remediation action.
+                    This should describe what will be fixed/remediated.
+                    Examples:
+                    - "Fix NTP configuration on router1 and router2"
+                    - "Apply DNS baseline to all DC routers"
+                    - "Remediate ACL violations on edge devices"
+        devices: Optional JSON array of device names being remediated.
+                Format: '["router1", "router2", "switch1"]'
+        remediation_items: Optional JSON string with detailed remediation items.
+                          Format: '{"items": [...], "action": "apply"}'
+    
+    Returns:
+        Dictionary containing:
+        - success: True if schedule was created successfully
+        - schedule_id: Unique ID of the created schedule (starts with 'AI-')
+        - job_name: Generated job name (format: REMEDIATION-{DATE}-{description})
+        - scheduled_datetime: The scheduled execution time
+        - cron_expression: The cron expression used
+        - description: The remediation description
+        - error: Error message if scheduling failed
+    
+    Example Usage:
+        - "Schedule remediation for tomorrow at 6 AM to fix NTP on all routers"
+        - "Plan a maintenance window on 2026-02-20 at 22:00 to apply ACL fixes"
+        - "Schedule the DNS fix for next Monday at 10:30"
+    
+    Notes:
+        - This is for ONE-TIME execution only, not recurring schedules
+        - Use schedule_compliance_audit for recurring audits
+        - Fixed tags: AI, REMEDIATION, daquezad
+        - Workflow: FIX_Compliance_Remediation v1.0
+        - Schedule IDs start with 'AI-' for safety
+    """
+    logger.info(f"LLM Tool Call: schedule_remediation_workflow -> {scheduled_datetime}")
+    
+    # Parse devices if provided as JSON string
+    devices_list = None
+    if devices:
+        try:
+            devices_list = json.loads(devices)
+            if not isinstance(devices_list, list):
+                devices_list = [devices_list]
+        except json.JSONDecodeError:
+            # If not valid JSON, treat as comma-separated string
+            devices_list = [d.strip() for d in devices.split(",")]
+    
+    return _schedule_remediation_workflow(
+        scheduled_datetime=scheduled_datetime,
+        description=description,
+        devices=devices_list,
+        remediation_items=remediation_items
+    )
+
+
+@tool
+def list_cwm_schedules(prefix_filter: str = "AI") -> Dict[str, Any]:
+    """
+    List scheduled workflows from Crosswork Workflow Manager (CWM).
+    
+    USE THIS TOOL when the user wants to:
+    - View all scheduled audits or remediations
+    - Check existing schedules before creating new ones
+    - Find schedule IDs for deletion
+    
+    By default, only shows schedules with IDs starting with 'AI' (created by this system).
+    
+    Args:
+        prefix_filter: Filter schedules by ID prefix (default: "AI").
+                      Set to empty string "" to show ALL schedules.
+                      Examples: "AI" for AI-created, "AUDIT" for audit schedules
+    
+    Returns:
+        Dictionary containing:
+        - success: True if request succeeded
+        - total_count: Total number of schedules in CWM
+        - filtered_count: Number matching the prefix filter
+        - schedules: List of schedules with ID, Note, Spec, NextActionTimes, Paused
+        - error: Error message if failed
+    
+    Example Usage:
+        - "Show me all scheduled audits"
+        - "List my scheduled remediations"
+        - "What schedules are configured?"
+    """
+    logger.info(f"LLM Tool Call: list_cwm_schedules -> prefix_filter={prefix_filter}")
+    
+    return _list_cwm_schedules(prefix_filter=prefix_filter)
+
+
+@tool
+def delete_cwm_schedule(schedule_id: str) -> Dict[str, Any]:
+    """
+    Delete a scheduled workflow from Crosswork Workflow Manager (CWM).
+    
+    USE THIS TOOL when the user wants to:
+    - Remove/cancel a scheduled audit or remediation
+    - Delete an unwanted schedule
+    - Clean up old schedules
+    
+    SAFETY: Only schedules with IDs starting with 'AI' can be deleted.
+    This prevents accidental deletion of system schedules.
+    
+    Args:
+        schedule_id: The ID of the schedule to delete.
+                    Must start with 'AI' (case-insensitive).
+                    Use list_cwm_schedules to find schedule IDs.
+    
+    Returns:
+        Dictionary containing:
+        - success: True if deletion was successful
+        - schedule_id: The deleted schedule ID
+        - error: Error message if deletion failed or ID doesn't start with 'AI'
+    
+    Example Usage:
+        - "Delete the schedule AI-20260201-15-audit-ntp-report"
+        - "Remove the scheduled remediation for tomorrow"
+        - "Cancel the daily audit schedule"
+    
+    Notes:
+        - Only AI-prefixed schedules can be deleted for safety
+        - Use list_cwm_schedules first to find the schedule ID
+        - Deletion is permanent and cannot be undone
+    """
+    logger.info(f"LLM Tool Call: delete_cwm_schedule -> {schedule_id}")
+    
+    return _delete_cwm_schedule(schedule_id=schedule_id)
+
+
 # Export tools list
 cwm_tools = [
     execute_cwm_remediation_workflow,
@@ -289,4 +505,8 @@ cwm_tools = [
     get_cwm_workflow_details,
     run_cwm_workflow,
     create_cwm_job,
+    schedule_compliance_audit,
+    schedule_remediation_workflow,
+    list_cwm_schedules,
+    delete_cwm_schedule,
 ]

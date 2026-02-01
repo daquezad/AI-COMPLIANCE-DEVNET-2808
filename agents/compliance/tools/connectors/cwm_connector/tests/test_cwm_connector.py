@@ -323,6 +323,90 @@ def test_delete_schedule(schedule_id: str):
         return False
 
 
+def test_schedule_compliance_audit(report_name: str, schedule_frequency: str, title: str = None):
+    """Test scheduling a compliance audit."""
+    from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import schedule_compliance_audit
+    
+    print("\n" + "=" * 60)
+    print(f"10. Testing schedule_compliance_audit()")
+    print("=" * 60)
+    print(f"   Report Name: {report_name}")
+    print(f"   Frequency: {schedule_frequency}")
+    if title:
+        print(f"   Title: {title}")
+    
+    # Validate frequency
+    valid_frequencies = ["DAILY", "WEEKLY", "MONTHLY"]
+    if schedule_frequency.upper() not in valid_frequencies:
+        print(f"\n   ❌ Invalid frequency: {schedule_frequency}")
+        print(f"   Must be one of: {valid_frequencies}")
+        return False
+    
+    # Safety prompt
+    confirm = input("\n⚠️  This will SCHEDULE a compliance audit in CWM. Continue? (yes/no): ")
+    if confirm.lower() != "yes":
+        print("   Skipped audit scheduling test.")
+        return None
+    
+    result = schedule_compliance_audit(
+        report_name=report_name,
+        schedule_frequency=schedule_frequency,
+        title=title,
+        trigger_immediately=False
+    )
+    
+    if result.get("success"):
+        print("✅ SUCCESS: Compliance audit scheduled")
+        print(f"   Schedule ID: {result.get('schedule_id')}")
+        print(f"   Job Name: {result.get('job_name')}")
+        print(f"   Cron Expression: {result.get('cron_expression')}")
+        print(f"   Frequency: {result.get('schedule_frequency')}")
+        print(f"\n   Response preview:")
+        print(json.dumps(result, indent=2, default=str)[:1500])
+        return True
+    else:
+        print(f"❌ FAILED: {result.get('error')}")
+        return False
+
+
+def test_schedule_remediation(scheduled_datetime: str, description: str, devices: list = None):
+    """Test scheduling a one-time remediation workflow."""
+    from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import schedule_remediation_workflow
+    
+    print("\n" + "=" * 60)
+    print(f"11. Testing schedule_remediation_workflow()")
+    print("=" * 60)
+    print(f"   Scheduled DateTime: {scheduled_datetime}")
+    print(f"   Description: {description}")
+    if devices:
+        print(f"   Devices: {devices}")
+    
+    # Safety prompt
+    confirm = input("\n⚠️  This will SCHEDULE a one-time remediation in CWM. Continue? (yes/no): ")
+    if confirm.lower() != "yes":
+        print("   Skipped remediation scheduling test.")
+        return None
+    
+    result = schedule_remediation_workflow(
+        scheduled_datetime=scheduled_datetime,
+        description=description,
+        devices=devices
+    )
+    
+    if result.get("success"):
+        print("✅ SUCCESS: Remediation scheduled")
+        print(f"   Schedule ID: {result.get('schedule_id')}")
+        print(f"   Job Name: {result.get('job_name')}")
+        print(f"   Scheduled Time: {result.get('scheduled_datetime')}")
+        print(f"   Cron Expression: {result.get('cron_expression')}")
+        print(f"\n   Response preview:")
+        print(json.dumps(result, indent=2, default=str)[:1500])
+        return True
+    else:
+        print(f"❌ FAILED: {result.get('error')}")
+        return False
+
+
 def test_connection():
     """Test basic connection to CWM."""
     from config.config import CWM_HOST, CWM_PORT, CWM_USERNAME
@@ -434,6 +518,47 @@ if __name__ == "__main__":
             print("\n⚠️  --delete-schedule requires schedule_id: --delete-schedule <schedule_id>")
     else:
         print("\n⚠️  Skipping delete_cwm_schedule test (use --delete-schedule <schedule_id> to enable)")
+    
+    # Test 10: Schedule compliance audit (optional, --schedule-audit <report_name> <frequency>)
+    if "--schedule-audit" in sys.argv:
+        audit_idx = sys.argv.index("--schedule-audit")
+        if len(sys.argv) > audit_idx + 2 and not sys.argv[audit_idx + 1].startswith("--"):
+            audit_report_name = sys.argv[audit_idx + 1]
+            audit_frequency = sys.argv[audit_idx + 2]
+            # Optional title as third argument
+            audit_title = None
+            if len(sys.argv) > audit_idx + 3 and not sys.argv[audit_idx + 3].startswith("--"):
+                audit_title = sys.argv[audit_idx + 3]
+            test_schedule_compliance_audit(
+                report_name=audit_report_name,
+                schedule_frequency=audit_frequency,
+                title=audit_title
+            )
+        else:
+            print("\n⚠️  --schedule-audit requires report_name and frequency: --schedule-audit <report_name> <DAILY|WEEKLY|MONTHLY> [title]")
+    else:
+        print("\n⚠️  Skipping schedule_compliance_audit test (use --schedule-audit <report_name> <DAILY|WEEKLY|MONTHLY> to enable)")
+    
+    # Test 11: Schedule remediation (optional, --schedule-remediation <datetime> <description>)
+    if "--schedule-remediation" in sys.argv:
+        rem_idx = sys.argv.index("--schedule-remediation")
+        if len(sys.argv) > rem_idx + 2 and not sys.argv[rem_idx + 1].startswith("--"):
+            rem_datetime = sys.argv[rem_idx + 1]
+            rem_description = sys.argv[rem_idx + 2]
+            # Optional devices as third argument (comma-separated)
+            rem_devices = None
+            if len(sys.argv) > rem_idx + 3 and not sys.argv[rem_idx + 3].startswith("--"):
+                rem_devices = [d.strip() for d in sys.argv[rem_idx + 3].split(",")]
+            test_schedule_remediation(
+                scheduled_datetime=rem_datetime,
+                description=rem_description,
+                devices=rem_devices
+            )
+        else:
+            print("\n⚠️  --schedule-remediation requires datetime and description:")
+            print("   --schedule-remediation '2026-02-15 10:30' 'Fix NTP config' [device1,device2]")
+    else:
+        print("\n⚠️  Skipping schedule_remediation_workflow test (use --schedule-remediation to enable)")
     
     print("\n" + "=" * 60)
     print("Test suite complete!")

@@ -294,6 +294,236 @@ def schedule_cwm_workflow(
         return {"success": False, "schedule_id": None, "result": None, "error": str(e)}
 
 
+# Predefined cron expressions for audit scheduling
+AUDIT_CRON_SCHEDULES = {
+    "DAILY": "0 0 6 * * *",      # Every day at 6:00 AM
+    "WEEKLY": "0 0 6 * * 1",      # Every Monday at 6:00 AM
+    "MONTHLY": "0 0 6 1 * *",     # 1st of every month at 6:00 AM
+}
+
+
+def schedule_compliance_audit(
+    report_name: str,
+    schedule_frequency: str,
+    title: Optional[str] = None,
+    from_time: Optional[str] = None,
+    to_time: Optional[str] = None,
+    outformat: str = "html",
+    timezone: str = "UTC",
+    trigger_immediately: bool = False,
+    note: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Schedule a compliance audit to run periodically using CWM.
+    
+    This function schedules the AUDIT_Compliance_Report workflow in CWM
+    to run compliance reports on a recurring basis.
+    
+    Args:
+        report_name: Name of the NSO compliance report to run
+        schedule_frequency: Frequency of the audit. Must be one of:
+                           - "DAILY": Run every day at 6:00 AM
+                           - "WEEKLY": Run every Monday at 6:00 AM
+                           - "MONTHLY": Run on the 1st of every month at 6:00 AM
+        title: Optional title for the report (default: generated from report_name)
+        from_time: Optional start time for historical data
+        to_time: Optional end time for historical data
+        outformat: Output format - 'html' or 'text' (default: 'html')
+        timezone: Timezone for schedule execution (default: 'UTC')
+        trigger_immediately: Whether to run immediately in addition to schedule (default: False)
+        note: Optional note/description for the schedule
+    
+    Returns:
+        Dict containing schedule creation result:
+        - success: True if schedule was created successfully
+        - schedule_id: ID of the created schedule
+        - job_name: Generated job name
+        - cron_expression: The cron expression used
+        - result: Full response data from CWM
+        - error: Error message if failed
+    """
+    # Validate schedule_frequency
+    schedule_frequency_upper = schedule_frequency.upper()
+    if schedule_frequency_upper not in AUDIT_CRON_SCHEDULES:
+        return {
+            "success": False,
+            "schedule_id": None,
+            "job_name": None,
+            "cron_expression": None,
+            "result": None,
+            "error": f"Invalid schedule_frequency: '{schedule_frequency}'. Must be one of: DAILY, WEEKLY, MONTHLY"
+        }
+    
+    cron_expression = AUDIT_CRON_SCHEDULES[schedule_frequency_upper]
+    
+    # Generate job name: AUDIT-{FREQUENCY}-{report_name or title}
+    report_title = title if title else report_name
+    job_name = f"AUDIT-{schedule_frequency_upper}-{report_title}".replace(" ", "_")
+    
+    # Generate schedule_id from report name
+    schedule_id_suffix = f"audit-{report_name.lower().replace(' ', '-')}"
+    
+    # Generate note if not provided
+    if not note:
+        note = f"{schedule_frequency_upper} compliance audit for report: {report_name}"
+    
+    # Fixed values
+    workflow_name = "AUDIT_Compliance_Report"
+    workflow_version = "1.0"
+    tags = ["AI", "AUDIT", "daquezad", "DEVNET"]
+    
+    # Build workflow input data
+    workflow_data = {
+        "report_name": report_name,
+        "outformat": outformat,
+    }
+    if title:
+        workflow_data["title"] = title
+    if from_time:
+        workflow_data["from_time"] = from_time
+    if to_time:
+        workflow_data["to_time"] = to_time
+    
+    logger.info(f"Scheduling compliance audit: {job_name} ({schedule_frequency_upper})")
+    
+    # Call the base schedule function
+    result = schedule_cwm_workflow(
+        schedule_id=schedule_id_suffix,
+        workflow_name=workflow_name,
+        workflow_version=workflow_version,
+        job_name=job_name,
+        cron_expressions=[cron_expression],
+        timezone=timezone,
+        tags=tags,
+        note=note,
+        trigger_immediately=trigger_immediately,
+    )
+    
+    # Enhance result with audit-specific info
+    result["job_name"] = job_name
+    result["cron_expression"] = cron_expression
+    result["schedule_frequency"] = schedule_frequency_upper
+    result["report_name"] = report_name
+    
+    return result
+
+
+def schedule_remediation_workflow(
+    scheduled_datetime: str,
+    description: str,
+    devices: Optional[List[str]] = None,
+    remediation_items: Optional[str] = None,
+    timezone: str = "UTC"
+) -> Dict[str, Any]:
+    """
+    Schedule a one-time remediation workflow at a specific date and time.
+    
+    This function schedules the FIX_Compliance_Remediation workflow in CWM
+    to run once at the specified date and time. NO RECURRENCE.
+    
+    Args:
+        scheduled_datetime: The date and time to run the remediation.
+                           Format: "YYYY-MM-DD HH:MM" (e.g., "2026-02-15 10:30")
+                           or ISO format "2026-02-15T10:30:00"
+        description: Short description of the remediation action from the LLM.
+                    This will be used as the note and part of the job name.
+        devices: Optional list of devices targeted for remediation
+        remediation_items: Optional JSON string with remediation details
+        timezone: Timezone for schedule execution (default: 'UTC')
+    
+    Returns:
+        Dict containing schedule creation result:
+        - success: True if schedule was created successfully
+        - schedule_id: ID of the created schedule
+        - job_name: Generated job name
+        - scheduled_datetime: The scheduled execution time
+        - cron_expression: The cron expression used
+        - result: Full response data from CWM
+        - error: Error message if failed
+    """
+    # Parse the scheduled datetime
+    try:
+        # Support multiple formats
+        dt_str = scheduled_datetime.replace("T", " ").strip()
+        if len(dt_str.split(" ")) == 2:
+            date_part, time_part = dt_str.split(" ")
+            year, month, day = date_part.split("-")
+            time_parts = time_part.split(":")
+            hour = time_parts[0]
+            minute = time_parts[1] if len(time_parts) > 1 else "0"
+        else:
+            return {
+                "success": False,
+                "schedule_id": None,
+                "job_name": None,
+                "scheduled_datetime": scheduled_datetime,
+                "cron_expression": None,
+                "result": None,
+                "error": f"Invalid datetime format: '{scheduled_datetime}'. Use 'YYYY-MM-DD HH:MM' (e.g., '2026-02-15 10:30')"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "schedule_id": None,
+            "job_name": None,
+            "scheduled_datetime": scheduled_datetime,
+            "cron_expression": None,
+            "result": None,
+            "error": f"Failed to parse datetime '{scheduled_datetime}': {str(e)}"
+        }
+    
+    # Create cron expression for specific date/time
+    # Format: minute hour day month day-of-week
+    cron_expression = f"{minute} {hour} {day} {month} *"
+    
+    # Generate job name from description (sanitized)
+    desc_short = description[:30].replace(" ", "_").replace("-", "_")
+    job_name = f"REMEDIATION-{year}{month}{day}-{desc_short}"
+    
+    # Generate schedule_id
+    schedule_id_suffix = f"remediation-{year}{month}{day}-{hour}{minute}"
+    
+    # Fixed values
+    workflow_name = "FIX_Compliance_Remediation"
+    workflow_version = "1.0"
+    tags = ["AI", "REMEDIATION", "daquezad"]
+    
+    # Build workflow input data
+    workflow_data = {
+        "description": description,
+    }
+    if devices:
+        workflow_data["devices"] = devices
+    if remediation_items:
+        workflow_data["remediation_items"] = remediation_items
+    
+    # Note is the description from LLM
+    note = f"One-time remediation: {description}"
+    
+    logger.info(f"Scheduling remediation workflow: {job_name} at {scheduled_datetime}")
+    
+    # Call the base schedule function
+    result = schedule_cwm_workflow(
+        schedule_id=schedule_id_suffix,
+        workflow_name=workflow_name,
+        workflow_version=workflow_version,
+        job_name=job_name,
+        cron_expressions=[cron_expression],
+        timezone=timezone,
+        tags=tags,
+        note=note,
+        trigger_immediately=False,  # Never trigger immediately for scheduled remediation
+    )
+    
+    # Enhance result with remediation-specific info
+    result["job_name"] = job_name
+    result["scheduled_datetime"] = scheduled_datetime
+    result["cron_expression"] = cron_expression
+    result["description"] = description
+    
+    return result
+
+
 def cancel_cwm_job_run(job_id: str, run_id: str) -> Dict[str, Any]:
     """
     Cancel a running job execution in Crosswork Workflow Manager (CWM).
