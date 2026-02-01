@@ -166,17 +166,67 @@ ANALYZER_PROMPT = """You are a Network Compliance Analyzer. Analyze the followin
 COMPLIANCE REPORT DATA:
 {report_data}
 
-Your task:
-1. Identify all non-compliant devices and their specific violations
-2. Determine the severity of each violation (critical issues should be marked as such)
-3. For each violation, suggest a remediation action (no compliant service -> re-deploy, out-of-sync -> sync-to, template not in device -> apply template)
-4. Provide an executive summary of the compliance status
+HTML REPORT STRUCTURE - HOW TO PARSE:
+=====================================
+The compliance report HTML has specific sections that map to remediation actions:
+
+1. **<h2>Devices out of sync</h2>** → Action: "sync-to"
+   - Look for: <p>Device <device_name> not compliant</p>
+   - Remediation: sync-to the device
+   - Example: "Device xr9kv-0 not compliant" → action="sync-to", target="xr9kv-0"
+
+2. **<h2>Compliance templates</h2>** → Action: "apply-template"
+   - <h3>template_name</h3> → The template that needs to be applied
+   - <p>Device <device_name> not compliant</p> → The device that needs the template
+   - Example:
+     <h3>NTP_Baseline</h3>
+     <p>Device Core-R01 not compliant</p>
+     → action="apply-template", target="Core-R01", details="NTP_Baseline"
+
+3. **<h2>Services out of sync</h2>** → Action: "re-deploy"
+   - <h3>/services/service-type:service-type{instance}</h3> → Service path with instance
+   - <p>Service ... out of sync</p> → Service instance info
+   - Example:
+     <h3>/services/loopback-tunisie:loopback-tunisie{TEST-Loopback}</h3>
+     <p>Service /services/loopback-tunisie:loopback-tunisie{TEST-Loopback} out of sync</p>
+     → action="re-deploy", target="loopback-tunisie", details="loopback-tunisie/TEST-Loopback"
+
+YOUR TASK:
+1. Parse each section of the HTML report
+2. Identify all non-compliant devices and their specific violations
+3. Map each violation to the correct remediation action based on the section
+4. Mark security-related or critical infrastructure issues as critical=true
+
+REMEDIATION ACTION MAPPING:
+| HTML Section | Action | Target | Details |
+|--------------|--------|--------|---------|
+| Devices out of sync | sync-to | device name | "Sync device to NSO" |
+| Compliance templates | apply-template | device name | template name from <h3> |
+| Services out of sync | re-deploy | service type | "service_type/service_instance" |
 
 Return your analysis in a structured format with:
 - summary: A brief executive summary (2-3 sentences)
 - total_devices: Total number of devices in the report
-- compliant_devices: Number of compliant devices
+- compliant_devices: Number of compliant devices  
 - non_compliant_devices: Number of non-compliant devices
-- violations: List of violations with device, rule, and severity
-- remediation_items: List of proposed remediation actions with id, critical, action, target, details
+- violations: List of violations with device, rule, severity, and message
+- remediation_items: List of proposed remediation actions
+
+REMEDIATION ITEM STRUCTURE:
+- id: Sequential integer (1, 2, 3...)
+- critical: Boolean (true for security/critical violations, false for minor issues)
+- action: One of "sync-to", "re-deploy", or "apply-template"
+- target: The device name OR service type
+- details: Additional context:
+    - For "sync-to": "Sync device to NSO"
+    - For "re-deploy": "service_type/service_instance" (e.g., "loopback-tunisie/TEST-Loopback")
+    - For "apply-template": Template name (e.g., "NTP_Baseline")
+- status: Always set to "Pending 🟡"
+
+EXAMPLE remediation_items:
+[
+    {"id": 1, "critical": true, "action": "sync-to", "target": "xr9kv-0", "details": "Sync device to NSO", "status": "Pending 🟡"},
+    {"id": 2, "critical": false, "action": "re-deploy", "target": "loopback-tunisie", "details": "loopback-tunisie/TEST-Loopback", "status": "Pending 🟡"},
+    {"id": 3, "critical": true, "action": "apply-template", "target": "Core-R01", "details": "NTP_Baseline", "status": "Pending 🟡"}
+]
 """

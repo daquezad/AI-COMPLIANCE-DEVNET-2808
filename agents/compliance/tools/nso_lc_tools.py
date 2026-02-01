@@ -252,5 +252,5 @@ nso_tools = [
     trigger_nso_compliance_report,
     get_nso_report_details,
     list_nso_compliance_reports,
-    schedule_nso_compliance_report
+    # schedule_nso_compliance_report
 ]

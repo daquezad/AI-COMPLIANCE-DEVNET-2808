@@ -20,6 +20,8 @@ KEY CONCEPTS:
 
 import logging
 import json
+import tempfile
+import os
 from typing import List, Optional, Dict, Any
 from langchain_core.tools import tool
 
@@ -227,7 +229,7 @@ def list_nso_compliance_results() -> Dict[str, Any]:
         data: Raw NSO output containing all report results with their metadata
     
     Example Usage:
-        - "Show me all compliance reports" → list_nso_compliance_results()
+        - "Show me all compliance reports results" → list_nso_compliance_results()
         - "What audits have been run?" → list_nso_compliance_results()
     """
     logger.info("LLM Tool Call: list_nso_compliance_results")
@@ -662,16 +664,16 @@ def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
     Download and preprocess a compliance report from NSO for analysis.
     
     This tool downloads a compliance report file from NSO using JSON-RPC authentication,
-    saves it locally, and preprocesses it for LLM analysis.
+    saves it to a temporary file, and returns the file path for the analyzer to process.
+    
+    IMPORTANT: The report content is NOT returned directly to save token usage.
+    Instead, the file path is returned and the analyzer node will read from the file.
     
     Use this tool when:
     - User wants to analyze a specific report by ID
     - After running a compliance report, to fetch the full report content
     - "Analyze report ID 5"
     - "Download the compliance report from <URL>"
-    
-    The downloaded report is saved to a local volume for persistence and can be
-    used by the analyzer node for detailed compliance analysis.
     
     Args:
         report_url_or_id: Either:
@@ -680,9 +682,10 @@ def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
     
     Returns:
         success: True if download was successful
-        filepath: Local path where the report was saved
-        content: Preprocessed report content ready for analysis
+        file_path: Path to the temp file containing preprocessed report (for analyzer node)
         report_id: The report identifier used
+        size_chars: Size of preprocessed content in characters
+        preview: First 500 characters of the report as a preview
     
     Example Usage:
         - "Download report 5 for analysis" → report_url_or_id="5"
@@ -693,13 +696,26 @@ def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
         filepath, content = download_and_preprocess_report(report_url_or_id)
         
         if filepath and content:
+            # Save content to a temp file to avoid token overload
+            temp_dir = tempfile.gettempdir()
+            # Sanitize report_id for filename
+            safe_id = str(report_url_or_id).replace("/", "_").replace(":", "_").replace(".", "_")[:50]
+            temp_file_path = os.path.join(temp_dir, f"compliance_report_{safe_id}.txt")
+            
+            with open(temp_file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            logger.info(f"Report saved to temp file: {temp_file_path} ({len(content)} chars)")
+            
+            # Return metadata only, not the full content
             return {
                 "success": True,
-                "filepath": filepath,
-                "content": content,
+                "file_path": temp_file_path,
                 "report_id": report_url_or_id,
                 "report_url": report_url_or_id if report_url_or_id.startswith("http") else None,
-                "message": f"Report downloaded and preprocessed successfully. Ready for analysis."
+                "size_chars": len(content),
+                "preview": content[:500] + "..." if len(content) > 500 else content,
+                "message": f"Report downloaded and saved to {temp_file_path}. Ready for analysis by analyzer node."
             }
         else:
             return {

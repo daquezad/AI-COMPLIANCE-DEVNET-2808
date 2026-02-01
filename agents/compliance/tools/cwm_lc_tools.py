@@ -499,14 +499,15 @@ def delete_cwm_schedule(schedule_id: str) -> Dict[str, Any]:
 
 # Export tools list
 cwm_tools = [
-    execute_cwm_remediation_workflow,
+    # execute_cwm_remediation_workflow,
     get_cwm_job_status,
     list_cwm_available_workflows,
     get_cwm_workflow_details,
-    run_cwm_workflow,
-    create_cwm_job,
+    # run_cwm_workflow,
+    # create_cwm_job,
     schedule_compliance_audit,
     schedule_remediation_workflow,
     list_cwm_schedules,
     delete_cwm_schedule,
 ]
+
