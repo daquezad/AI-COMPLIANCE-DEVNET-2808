@@ -253,8 +253,8 @@ def schedule_cwm_workflow(
     
     # Generate unique schedule_id with date prefix and random int
     date_prefix = datetime.now().strftime("%Y%m%d")
-    random_suffix = random.randint(0, 999)
-    unique_schedule_id = f"{date_prefix}-{random_suffix}-{schedule_id}"
+    random_suffix = random.randint(0, 99)
+    unique_schedule_id = f"AI-{date_prefix}-{random_suffix}-{schedule_id}"
     
     payload = {
         "scheduleId": unique_schedule_id,
@@ -292,6 +292,166 @@ def schedule_cwm_workflow(
     except Exception as e:
         logger.error(f"Error creating CWM schedule {unique_schedule_id}: {e}")
         return {"success": False, "schedule_id": None, "result": None, "error": str(e)}
+
+
+def cancel_cwm_job_run(job_id: str, run_id: str) -> Dict[str, Any]:
+    """
+    Cancel a running job execution in Crosswork Workflow Manager (CWM).
+    
+    Args:
+        job_id: The ID of the job (e.g., "5f0d02a9-004f-4af3-b1d2-8dcf5c6d6ed2")
+        run_id: The ID of the specific run to cancel (e.g., "58eb5e15-fed6-47cb-9611-10d2c98de010")
+    
+    Returns:
+        Dict containing cancellation result:
+        - success: True if cancellation was successful
+        - job_id: The job ID
+        - run_id: The run ID
+        - result: Full response data from CWM
+        - error: Error message if failed
+    """
+    client = _get_client()
+    path = f"crosswork/cwm/v2/job/{job_id}/runs/{run_id}/cancel"
+    
+    logger.info(f"Cancelling CWM job run: job_id={job_id}, run_id={run_id}")
+    
+    try:
+        response = client.post(path, data={})
+        
+        if response.status_code >= 400:
+            text = getattr(response, "text", "")
+            logger.error("CWM job cancellation failed status=%s body=%s", response.status_code, text)
+            return {"success": False, "job_id": job_id, "run_id": run_id, "result": None, "error": text}
+        
+        data = response.json() if callable(getattr(response, "json", None)) else (response.json or {})
+        
+        logger.info(f"Successfully cancelled CWM job run: job_id={job_id}, run_id={run_id}")
+        return {"success": True, "job_id": job_id, "run_id": run_id, "result": data, "error": None}
+        
+    except Exception as e:
+        logger.error(f"Error cancelling CWM job run job_id={job_id}, run_id={run_id}: {e}")
+        return {"success": False, "job_id": job_id, "run_id": run_id, "result": None, "error": str(e)}
+
+
+def list_cwm_schedules(prefix_filter: Optional[str] = "AI", tags: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    List scheduled workflows from Crosswork Workflow Manager (CWM).
+    
+    Retrieves all schedules and optionally filters by ID prefix.
+    Returns simplified data with ID, Note, and Spec for each schedule.
+    
+    Args:
+        prefix_filter: Optional prefix to filter schedule IDs (default: "AI").
+                       Set to None or empty string to return all schedules.
+        tags: Optional list of tags to filter by (e.g., ["devnet"])
+    
+    Returns:
+        Dict containing:
+        - success: True if request succeeded
+        - total_count: Total number of schedules before filtering
+        - filtered_count: Number of schedules after filtering
+        - schedules: List of filtered schedules with ID, Note, Spec, NextActionTimes
+        - error: Error message if failed
+    """
+    client = _get_client()
+    path = "crosswork/cwm/v2/schedule"
+    
+    # Prepare payload for tags filter if provided
+    payload = {}
+    if tags:
+        payload["tags"] = ",".join(tags) if isinstance(tags, list) else tags
+    
+    logger.info(f"Fetching CWM schedules list (prefix_filter={prefix_filter}, tags={tags})")
+    
+    try:
+        response = client.get(path, params=payload if payload else None)
+        
+        if response.status_code >= 400:
+            text = getattr(response, "text", "")
+            logger.error("CWM schedules list failed status=%s body=%s", response.status_code, text)
+            return {"success": False, "total_count": 0, "filtered_count": 0, "schedules": [], "error": text}
+        
+        data = response.json() if callable(getattr(response, "json", None)) else (response.json or [])
+        
+        # Ensure data is a list
+        schedules_list = data if isinstance(data, list) else []
+        total_count = len(schedules_list)
+        
+        # Filter by prefix if specified
+        if prefix_filter:
+            filtered_schedules = [
+                s for s in schedules_list 
+                if s.get("ID", "").upper().startswith(prefix_filter.upper())
+            ]
+        else:
+            filtered_schedules = schedules_list
+        
+        # Extract only ID, Note, Spec, and NextActionTimes
+        simplified_schedules = []
+        for schedule in filtered_schedules:
+            simplified_schedules.append({
+                "ID": schedule.get("ID"),
+                "Note": schedule.get("Note", ""),
+                "Spec": schedule.get("Spec", {}),
+                "NextActionTimes": schedule.get("NextActionTimes", []),
+                "Paused": schedule.get("Paused", False)
+            })
+        
+        logger.info(f"Retrieved {total_count} schedules, {len(simplified_schedules)} match filter")
+        return {
+            "success": True,
+            "total_count": total_count,
+            "filtered_count": len(simplified_schedules),
+            "schedules": simplified_schedules,
+            "error": None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching CWM schedules: {e}")
+        return {"success": False, "total_count": 0, "filtered_count": 0, "schedules": [], "error": str(e)}
+
+
+def delete_cwm_schedule(schedule_id: str, require_ai_prefix: bool = True) -> Dict[str, Any]:
+    """
+    Delete a scheduled workflow from Crosswork Workflow Manager (CWM).
+    
+    For safety, by default only schedules with IDs starting with 'AI' can be deleted.
+    
+    Args:
+        schedule_id: The ID of the schedule to delete
+        require_ai_prefix: If True (default), only allow deletion if ID starts with 'AI'
+    
+    Returns:
+        Dict containing:
+        - success: True if deletion was successful
+        - schedule_id: The deleted schedule ID
+        - error: Error message if failed
+    """
+    # Safety check: Only delete schedules starting with 'AI' by default
+    if require_ai_prefix and not schedule_id.upper().startswith("AI"):
+        error_msg = f"Safety check failed: Schedule ID '{schedule_id}' does not start with 'AI'. Set require_ai_prefix=False to override."
+        logger.warning(error_msg)
+        return {"success": False, "schedule_id": schedule_id, "error": error_msg}
+    
+    client = _get_client()
+    path = f"crosswork/cwm/v2/schedule/{schedule_id}"
+    
+    logger.info(f"Deleting CWM schedule: {schedule_id}")
+    
+    try:
+        response = client.delete(path)
+        
+        if response.status_code >= 400:
+            text = getattr(response, "text", "")
+            logger.error("CWM schedule deletion failed status=%s body=%s", response.status_code, text)
+            return {"success": False, "schedule_id": schedule_id, "error": text}
+        
+        logger.info(f"Successfully deleted CWM schedule: {schedule_id}")
+        return {"success": True, "schedule_id": schedule_id, "error": None}
+        
+    except Exception as e:
+        logger.error(f"Error deleting CWM schedule {schedule_id}: {e}")
+        return {"success": False, "schedule_id": schedule_id, "error": str(e)}
 
 
 

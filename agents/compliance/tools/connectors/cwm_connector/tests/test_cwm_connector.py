@@ -221,6 +221,108 @@ def test_schedule_workflow(
         return False
 
 
+def test_cancel_job_run(job_id: str, run_id: str):
+    """Test cancelling a CWM job run."""
+    from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import cancel_cwm_job_run
+    
+    print("\n" + "=" * 60)
+    print(f"7. Testing cancel_cwm_job_run()")
+    print("=" * 60)
+    print(f"   Job ID: {job_id}")
+    print(f"   Run ID: {run_id}")
+    
+    # Safety prompt
+    confirm = input("\n⚠️  This will CANCEL a running job in CWM. Continue? (yes/no): ")
+    if confirm.lower() != "yes":
+        print("   Skipped job cancellation test.")
+        return None
+    
+    result = cancel_cwm_job_run(job_id=job_id, run_id=run_id)
+    
+    if result.get("success"):
+        print("✅ SUCCESS: Job run cancelled")
+        print(f"   Job ID: {result.get('job_id')}")
+        print(f"   Run ID: {result.get('run_id')}")
+        print(f"\n   Response preview:")
+        print(json.dumps(result, indent=2, default=str)[:1500])
+        return True
+    else:
+        print(f"❌ FAILED: {result.get('error')}")
+        return False
+
+
+def test_list_schedules(prefix_filter: str = "AI"):
+    """Test listing CWM scheduled workflows."""
+    from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import list_cwm_schedules
+    
+    print("\n" + "=" * 60)
+    print(f"8. Testing list_cwm_schedules(prefix_filter='{prefix_filter}')")
+    print("=" * 60)
+    
+    result = list_cwm_schedules(prefix_filter=prefix_filter)
+    
+    if result.get("success"):
+        print("✅ SUCCESS: Retrieved schedules list")
+        print(f"   Total schedules: {result.get('total_count')}")
+        print(f"   Filtered (prefix='{prefix_filter}'): {result.get('filtered_count')}")
+        
+        schedules = result.get("schedules", [])
+        if schedules:
+            print("\n   Filtered Schedules:")
+            print("   " + "-" * 50)
+            for s in schedules:
+                print(f"   • ID: {s.get('ID')}")
+                print(f"     Note: {s.get('Note') or '(none)'}")
+                print(f"     Paused: {s.get('Paused')}")
+                next_times = s.get('NextActionTimes', [])
+                if next_times:
+                    print(f"     Next Run: {next_times[0]}")
+                print()
+            print("   " + "-" * 50)
+        
+        print(f"\n   Full response preview:")
+        print(json.dumps(result, indent=2, default=str)[:2000])
+        if len(json.dumps(result, default=str)) > 2000:
+            print("   ... [truncated]")
+        return True, schedules
+    else:
+        print(f"❌ FAILED: {result.get('error')}")
+        return False, []
+
+
+def test_delete_schedule(schedule_id: str):
+    """Test deleting a CWM schedule (only if ID starts with 'AI')."""
+    from agents.compliance.tools.connectors.cwm_connector.api.cwm_requests import delete_cwm_schedule
+    
+    print("\n" + "=" * 60)
+    print(f"9. Testing delete_cwm_schedule('{schedule_id}')")
+    print("=" * 60)
+    
+    # Check if ID starts with AI
+    if not schedule_id.upper().startswith("AI"):
+        print(f"   ⚠️  Schedule ID '{schedule_id}' does not start with 'AI'")
+        print("   For safety, only AI-prefixed schedules can be deleted.")
+        return False
+    
+    print(f"   Schedule ID: {schedule_id}")
+    
+    # Safety prompt
+    confirm = input("\n⚠️  This will DELETE the schedule from CWM. Continue? (yes/no): ")
+    if confirm.lower() != "yes":
+        print("   Skipped schedule deletion test.")
+        return None
+    
+    result = delete_cwm_schedule(schedule_id=schedule_id)
+    
+    if result.get("success"):
+        print("✅ SUCCESS: Schedule deleted")
+        print(f"   Deleted ID: {result.get('schedule_id')}")
+        return True
+    else:
+        print(f"❌ FAILED: {result.get('error')}")
+        return False
+
+
 def test_connection():
     """Test basic connection to CWM."""
     from config.config import CWM_HOST, CWM_PORT, CWM_USERNAME
@@ -272,7 +374,7 @@ if __name__ == "__main__":
         # Example job creation - customize as needed
         test_create_job(
             job_name="test API job",
-            workflow_name="1.0",
+            workflow_name="FIX_Compliance_Remediation",
             workflow_version="1.0",
             data={},
             tags=[ "AI-COMPLIANCE","daquezad","test"]
@@ -286,16 +388,52 @@ if __name__ == "__main__":
         unique_id = f"ai-compliance-schedule-{uuid.uuid4().hex[:8]}"
         test_schedule_workflow(
             schedule_id=unique_id,
-            workflow_name="1.0",
+            workflow_name="AUDIT_Compliance_Report",
             workflow_version="1.0",
             job_name="exampleJob-daily",
             cron_expressions=["0 0 6 2 *"],  # At 6:00 AM on day 2 of the month
             timezone="UTC",
-            tags=["devnet", "ai", "daquezad"],
+            tags=["DEVNET", "AI", "daquezad"],
             note="Daily run of example workflow"
         )
     else:
         print("\n⚠️  Skipping schedule_cwm_workflow test (use --schedule flag to enable)")
+    
+    # Test 7: Cancel job run (optional, requires --cancel flag with job_id and run_id)
+    if "--cancel" in sys.argv:
+        # Find job_id and run_id from command line args
+        cancel_idx = sys.argv.index("--cancel")
+        if len(sys.argv) > cancel_idx + 2:
+            cancel_job_id = sys.argv[cancel_idx + 1]
+            cancel_run_id = sys.argv[cancel_idx + 2]
+            test_cancel_job_run(job_id=cancel_job_id, run_id=cancel_run_id)
+        else:
+            print("\n⚠️  --cancel requires job_id and run_id: --cancel <job_id> <run_id>")
+    else:
+        print("\n⚠️  Skipping cancel_cwm_job_run test (use --cancel <job_id> <run_id> to enable)")
+    
+    # Test 8: List schedules (optional, --list-schedules [prefix])
+    if "--list-schedules" in sys.argv:
+        # Check if a custom prefix was provided
+        list_idx = sys.argv.index("--list-schedules")
+        if len(sys.argv) > list_idx + 1 and not sys.argv[list_idx + 1].startswith("--"):
+            prefix = sys.argv[list_idx + 1]
+        else:
+            prefix = "AI"  # Default to AI prefix
+        test_list_schedules(prefix_filter=prefix)
+    else:
+        print("\n⚠️  Skipping list_cwm_schedules test (use --list-schedules [prefix] to enable)")
+    
+    # Test 9: Delete schedule (optional, --delete-schedule <schedule_id>)
+    if "--delete-schedule" in sys.argv:
+        del_idx = sys.argv.index("--delete-schedule")
+        if len(sys.argv) > del_idx + 1 and not sys.argv[del_idx + 1].startswith("--"):
+            del_schedule_id = sys.argv[del_idx + 1]
+            test_delete_schedule(schedule_id=del_schedule_id)
+        else:
+            print("\n⚠️  --delete-schedule requires schedule_id: --delete-schedule <schedule_id>")
+    else:
+        print("\n⚠️  Skipping delete_cwm_schedule test (use --delete-schedule <schedule_id> to enable)")
     
     print("\n" + "=" * 60)
     print("Test suite complete!")
