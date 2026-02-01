@@ -25,7 +25,7 @@ from langchain_core.tools import tool
 
 from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
-# from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
+from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
 
 
 # from exceptions import NSOCLIError
@@ -48,8 +48,10 @@ def configure_nso_compliance_report(
     report_name: str,
     device_check_all: bool = False,
     device_check_devices: Optional[List[str]] = None,
+    device_check_device_groups: Optional[List[str]] = None,
     device_check_templates: Optional[List[str]] = None,
     service_check_all: bool = False,
+    service_check_service_types: Optional[List[str]] = None,
     dry_run: bool = True
 ) -> Dict[str, Any]:
     """
@@ -68,20 +70,27 @@ def configure_nso_compliance_report(
     DEVICE SELECTION (choose one):
     - device_check_all=True: Audit ALL managed devices in NSO
     - device_check_devices=["router1", "switch1"]: Audit specific devices only
+    - device_check_device_groups=["dc-core", "wan-routers"]: Audit devices in specific device groups.
+      Use 'list_nso_device_groups' tool first to discover available device groups.
     
     COMPLIANCE TEMPLATES:
     - device_check_templates=["ntp-standard", "acl-baseline"]: Check devices against 
       these Golden Config templates to find configuration drift
     
-    SERVICE SELECTION:
+    SERVICE SELECTION (choose one or combine):
     - service_check_all=True: Verify all NSO service instances are in-sync
+    - service_check_service_types=["/ncs:services/loopback:loopback"]: Check specific service types only
+      Use 'list_nso_service_types' tool first to discover available service types.
     
     Args:
         report_name: Unique identifier for this report definition (e.g., "weekly-audit", "dc-core-check")
-        device_check_all: True to include ALL devices. Mutually exclusive with device_check_devices.
-        device_check_devices: List of specific device names to audit. Mutually exclusive with device_check_all.
+        device_check_all: True to include ALL devices. Mutually exclusive with device_check_devices/device_check_device_groups.
+        device_check_devices: List of specific device names to audit. Mutually exclusive with device_check_all/device_check_device_groups.
+        device_check_device_groups: List of NSO device group names to audit. Use 'list_nso_device_groups' to discover available groups. Mutually exclusive with device_check_all/device_check_devices.
         device_check_templates: List of compliance template names to validate devices against.
         service_check_all: True to verify all service instances are synchronized.
+        service_check_service_types: List of service type paths to check (e.g., ["/ncs:services/loopback:loopback"]).
+            Use 'list_nso_service_types' to discover available service types first.
         dry_run: If True (default), preview changes without committing. If False, commit the configuration.
     
     Returns:
@@ -101,8 +110,10 @@ def configure_nso_compliance_report(
             report_name=report_name,
             device_check_all=device_check_all,
             device_check_devices=device_check_devices,
+            device_check_device_groups=device_check_device_groups,
             device_check_templates=device_check_templates,
             service_check_all=service_check_all,
+            service_check_service_types=service_check_service_types,
             dry_run=dry_run
         )
         
@@ -143,6 +154,7 @@ def run_nso_compliance_report(
     - Which devices are IN-SYNC vs OUT-OF-SYNC with NSO
     - Which devices VIOLATE compliance templates (Golden Config deviations)
     - Service synchronization status
+    - ALWAYS ask for the name of the report_name
     
     OUTPUT FORMATS:
     - text: Human-readable plain text (default, best for quick review)
@@ -152,12 +164,12 @@ def run_nso_compliance_report(
     
     Args:
         report_name: Name of the existing report definition to execute (must exist in NSO)
-        outformat: Output format - 'text', 'html', 'xml', or 'sqlite' (default: 'text')
+        outformat: Output format - 'text', 'html', 'xml', or 'sqlite' (default: 'html')
         title: Optional descriptive title for this run (e.g., "Q1 2025 Audit", "Pre-Change Check")
     
     Returns:
         success: True if report executed successfully
-        report_name: Name of the executed report
+        report_name: Name of the executed report. Proposed by user or by AI acccordingly.
         format: Output format used
         nso_output: Contains the report location URL and execution summary
     
@@ -178,7 +190,7 @@ def run_nso_compliance_report(
             "format": outformat,
             "nso_output": output
         }
-    except NSOError as e:
+    except NSOCLIError as e:
         return {"success": False, "error": str(e)}
 
 
@@ -357,6 +369,288 @@ def list_nso_compliance_report_definitions() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+@tool
+def remove_nso_compliance_report_results(report_id: str) -> Dict[str, Any]:
+    """
+    Remove specific compliance report RESULTS from NSO history.
+    
+    This tool deletes executed report results (historical audit data), NOT the report
+    definitions. Use this to clean up old audit results.
+    
+    DIFFERENCE FROM delete_nso_compliance_report:
+    - remove_nso_compliance_report_results: Deletes EXECUTED audit results (history)
+    - delete_nso_compliance_report: Deletes the report DEFINITION (configuration)
+    
+    ⚠️ WARNING: This is a DESTRUCTIVE operation that cannot be undone. ALWAYS ask for confirmation from user
+    The report results will be permanently removed from NSO.
+    
+    Args:
+        report_id: The ID of the report result to remove. This is typically a timestamp
+                   in ISO format (e.g., "2026-01-31T15:07:26.424284+00:00") or a numeric
+                   ID. You can also specify a range like "1..5" to remove multiple results.
+    
+    WORKFLOW:
+    1. First use 'list_nso_compliance_results' to see all report results with their IDs
+    2. Identify the report_id you want to remove
+    3. Get user APPROVAL and inform it is a destructive operation
+    4. Use this tool to remove it
+    
+    Returns:
+        success: True if report results were removed successfully
+        message: Status message confirming removal
+        report_id: ID of the removed report results
+        nso_output: Raw NSO CLI output for debugging
+    
+    Example Usage:
+        - "Remove the report result from January 31st" → report_id="2026-01-31T15:07:26.424284+00:00"
+        - "Delete report results 1 through 5" → report_id="1..5"
+        - "Clean up old audit result ID 42" → report_id="42"
+    """
+    logger.info(f"LLM Tool Call: remove_nso_compliance_report_results -> {report_id}")
+    try:
+        output = _manager.remove_compliance_report_results(report_id)
+        return {
+            "success": True,
+            "message": f"Report results '{report_id}' have been removed from NSO.",
+            "report_id": report_id,
+            "nso_output": output
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "report_id": report_id}
+
+
+@tool
+def list_nso_service_types() -> Dict[str, Any]:
+    """
+    List all available service types configured in NSO.
+    
+    This tool retrieves the list of NSO service types that can be used when configuring
+    compliance reports with service checks. Use this to discover which services are
+    available in your NSO instance.
+    
+    PURPOSE: Discover available service types for use in compliance report configuration.
+    The returned service names can be used directly in the 'service_check_service_types'
+    parameter of 'configure_nso_compliance_report'.
+    
+    WHEN TO USE:
+    - Before configuring a compliance report with service checks
+    - "What services are available in NSO?"
+    - "List all service types I can audit"
+    - "Show me the services for compliance checking"
+    
+    Returns:
+        success: True if query was successful
+        service_types: List of service type names (e.g., ['loopback-demo:loopback-demo'])
+        count: Number of service types found
+    
+    Example Output:
+        {
+            "success": True,
+            "service_types": [
+                "loopback-demo:loopback-demo",
+                "loopback-tunisie:loopback-tunisie"
+            ],
+            "count": 2
+        }
+    
+    Example Usage in Workflow:
+        1. Call list_nso_service_types() to see available services
+        2. Use the service name in configure_nso_compliance_report:
+           configure_nso_compliance_report(
+               report_name="my-service-audit",
+               service_check_service_types=["loopback-tunisie:loopback-tunisie"]
+           )
+    """
+    logger.info("LLM Tool Call: list_nso_service_types")
+    try:
+        service_types = _manager.list_service_types()
+        return {
+            "success": True,
+            "service_types": service_types,
+            "count": len(service_types)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@tool
+def list_nso_compliance_templates() -> Dict[str, Any]:
+    """
+    List all available compliance templates configured in NSO.
+    
+    This tool retrieves the list of compliance templates (Golden Configs) that can be used
+    when configuring compliance reports. Use this to discover which templates are available
+    for device compliance checking.
+    
+    PURPOSE: Discover available compliance templates for use in compliance report configuration.
+    The returned template names can be used directly in the 'device_check_templates'
+    parameter of 'configure_nso_compliance_report'.
+    
+    WHEN TO USE:
+    - Before configuring a compliance report with template checks
+    - "What compliance templates are available?"
+    - "List all Golden Config templates"
+    - "Show me the templates I can use for compliance checking"
+    
+    Returns:
+        success: True if query was successful
+        templates: List of compliance template names (e.g., ['ntp_dns', 'acl-baseline'])
+        count: Number of templates found
+    
+    Example Output:
+        {
+            "success": True,
+            "templates": ["ntp_dns", "acl-baseline"],
+            "count": 2
+        }
+    
+    Example Usage in Workflow:
+        1. Call list_nso_compliance_templates() to see available templates
+        2. Use the template name in configure_nso_compliance_report:
+           configure_nso_compliance_report(
+               report_name="my-device-audit",
+               device_check_all=True,
+               device_check_templates=["ntp_dns"]
+           )
+    """
+    logger.info("LLM Tool Call: list_nso_compliance_templates")
+    try:
+        templates = _manager.list_compliance_templates()
+        return {
+            "success": True,
+            "templates": templates,
+            "count": len(templates)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@tool
+def show_nso_compliance_template(template_name: str) -> Dict[str, Any]:
+    """
+    Show the detailed configuration of a specific compliance template (Golden Config).
+    
+    This tool retrieves the full configuration details of a compliance template,
+    including its expressions, device settings, and matching criteria.
+    
+    PURPOSE: View the contents of a Golden Config template to understand:
+    - What configuration items are being checked
+    - What expressions/patterns are defined
+    - How the template is structured
+    
+    WHEN TO USE:
+    - "Show me the ntp_dns template configuration"
+    - "What does the acl-baseline template check for?"
+    - "Display the contents of template X"
+    - Before modifying or using a template, to understand its structure
+    
+    WORKFLOW:
+    1. First use 'list_nso_compliance_templates()' to see available templates
+    2. Then use this tool to view details of a specific template
+    
+    Args:
+        template_name: Name of the compliance template to show (e.g., "ntp_dns")
+    
+    Returns:
+        success: True if query was successful
+        template_name: Name of the template queried
+        configuration: Full NSO configuration output for the template
+    
+    Example Usage:
+        - "Show me the ntp_dns template" → template_name="ntp_dns"
+    """
+    logger.info(f"LLM Tool Call: show_nso_compliance_template -> {template_name}")
+    try:
+        output = _manager.show_compliance_templates(template_name=template_name)
+        return {
+            "success": True,
+            "template_name": template_name,
+            "configuration": output
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@tool
+def show_nso_compliance_report_config(report_name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    View the configuration of a compliance report definition in NSO.
+    
+    Use this tool to inspect HOW a compliance report is configured - what devices,
+    device groups, templates, and services are included in the report definition.
+    
+    This shows the DEFINITION (configuration), not the execution results.
+    For executed report results, use 'list_nso_compliance_results' instead.
+    
+    WHEN TO USE:
+    - "Show me how the weekly-audit report is configured"
+    - "What devices does the dc-compliance report check?"
+    - "Display the configuration of report X"
+    - Before modifying a report, to understand its current settings
+    - To verify a report was configured correctly after creation
+    
+    Args:
+        report_name: Name of a specific report to view. If None, shows ALL report configurations.
+    
+    Returns:
+        success: True if query was successful
+        report_name: Name of the report queried (or "all" if viewing all)
+        configuration: NSO configuration output showing the report definition
+    
+    Example Usage:
+        - "Show config for weekly-audit" → report_name="weekly-audit"
+        - "Show all report configurations" → report_name=None
+    """
+    logger.info(f"LLM Tool Call: show_nso_compliance_report_config -> {report_name or 'all'}")
+    try:
+        output = _manager.show_compliance_report_config(report_name=report_name)
+        return {
+            "success": True,
+            "report_name": report_name or "all",
+            "configuration": output
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e), "report_name": report_name}
+
+
+@tool
+def list_nso_device_groups() -> Dict[str, Any]:
+    """
+    Discovery Tool: List all available device groups in NSO.
+    
+    Use this tool BEFORE configuring compliance reports with device_check_device_groups
+    to discover which device groups are available in the NSO system.
+    
+    Device groups in NSO are logical groupings of devices (e.g., "dc-core", "wan-routers",
+    "branch-switches") that can be used to scope compliance checks.
+    
+    WHEN TO USE:
+    - Before creating a compliance report that targets device groups
+    - "What device groups are available?"
+    - "Show me the device groups in NSO"
+    - "List all device groups"
+    
+    Returns:
+        success: True if query was successful
+        device_groups: List of device group names available in NSO
+        count: Number of device groups found
+    
+    Example Usage:
+        1. Call list_nso_device_groups() to see available groups
+        2. Use returned group names in configure_nso_compliance_report(device_check_device_groups=[...])
+    """
+    logger.info("LLM Tool Call: list_nso_device_groups")
+    try:
+        device_groups = _manager.list_device_groups()
+        return {
+            "success": True,
+            "device_groups": device_groups,
+            "count": len(device_groups)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # Export the list of tools for LangChain Agent initialization
 # These tools follow a typical compliance workflow:
 # 1. configure_nso_compliance_report - Define what to audit
@@ -364,12 +658,24 @@ def list_nso_compliance_report_definitions() -> Dict[str, Any]:
 # 3. list_nso_compliance_results - View audit history (executed reports)
 # 4. list_nso_compliance_report_definitions - View configured reports (what can be run)
 # 5. create_nso_compliance_template - Create Golden Config templates
-# 6. delete_nso_compliance_report - Remove report definitions
+# 6. list_nso_compliance_templates - List available compliance templates
+# 7. show_nso_compliance_template - Show details of a specific template
+# 8. delete_nso_compliance_report - Remove report definitions
+# 9. remove_nso_compliance_report_results - Remove executed report results (history)
+# 10. list_nso_service_types - Discover available service types
+# 11. list_nso_device_groups - Discover available device groups
+# 12. show_nso_compliance_report_config - View report definition configuration
 nso_compliance_toolset = [
     configure_nso_compliance_report,
     run_nso_compliance_report,
     list_nso_compliance_results,
     list_nso_compliance_report_definitions,
     create_nso_compliance_template,
-    delete_nso_compliance_report
+    list_nso_compliance_templates,
+    show_nso_compliance_template,
+    show_nso_compliance_report_config,
+    delete_nso_compliance_report,
+    remove_nso_compliance_report_results,
+    list_nso_service_types,
+    list_nso_device_groups
 ]

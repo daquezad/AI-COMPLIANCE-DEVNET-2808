@@ -385,20 +385,20 @@ if __name__ == "__main__":
         # result = manager.configure_compliance_report("device-check-all", device_check_all=True)
         # print(result)
         
-        # Test: Check specific devices
+        # # Test: Check specific devices
         # print("\n[TEST] Configure specific device report...")
         # result = manager.configure_compliance_report("test-template", device_check_devices=["ios-1"], device_current_out_of_sync=True)
         # print(result)
         
-        # Test: Check device groups
+        # # Test: Check device groups
         # print("\n[TEST] Configure device group report...")
         # result = manager.configure_compliance_report("group-check", device_check_device_groups=["IOS-DEVICES", "IOS-XR-DEVICES"])
         # print(result)
         
         # Test: Check all services
-        print("\n[TEST] Configure service-check-all report...")
-        result = manager.configure_compliance_report("service-check-all-pytest-dry", service_check_all=True, dry_run=True)
-        print(result)
+        # print("\n[TEST] Configure service-check-all report...")
+        # result = manager.configure_compliance_report("service-check-all-pytest-dry", service_check_all=True, dry_run=False)
+        # print(result)
         
         # Test: Check specific service types
         # print("\n[TEST] Configure service types report...")
@@ -408,22 +408,22 @@ if __name__ == "__main__":
         # Test: Combined check with templates
         # print("\n[TEST] Configure combined report with templates...")
         # result = manager.configure_compliance_report(
-        #     "SALUDOS-gold-check",
+        #     "SALUDOS-gold-check-test",
         #     device_check_all=True,
-        #     device_check_templates=["ntp_dns"],
-        #     service_check_service_types=["loopback-tunisie:loopback-tunisie"]
+            # device_check_templates=["ntp_dns"]
+            # service_check_service_types=["loopback-tunisie:loopback-tunisie"]
         # )
         # print(result)
         
         # =======================================================================
         # 2. RUN COMPLIANCE REPORTS
         # =======================================================================
-        print("\n--- 2. RUN COMPLIANCE REPORTS ---")
+        # print("\n--- 2. RUN COMPLIANCE REPORTS ---")
         
         # Test: Run report with HTML output
-        # print("\n[TEST] Run group-check report (HTML)...")
-        # result = manager.run_compliance_report("group-check", title="My First Report from python", outformat="html")
-        # print(result)
+        print("\n[TEST] Run group-check report (HTML)...")
+        result = manager.run_compliance_report("l3vpn-check", title="My First Report from python", outformat="html")
+        print(result)
         
         # Test: Run report with time range
         # print("\n[TEST] Run gold-check report with time range...")
@@ -454,7 +454,7 @@ if __name__ == "__main__":
         # =======================================================================
         # 4. COMPLIANCE TEMPLATES
         # =======================================================================
-        print("\n--- 4. COMPLIANCE TEMPLATES ---")
+        # print("\n--- 4. COMPLIANCE TEMPLATES ---")
         
         # Test: Create template from device template
         # print("\n[TEST] Create compliance template from device template...")
@@ -486,15 +486,15 @@ if __name__ == "__main__":
         
         # WARNING: These operations are destructive!
         
-        # Remove report results by ID range
-        # print("\n[TEST] Remove report results 1..3...")
-        # result = manager.remove_compliance_report_results("1..3")
+        # Remove report results by ID 
+        # print("\n[TEST] Remove report results ID 2026-01-31T15:07:26.424284+00:00")
+        # result = manager.remove_compliance_report_results("2026-01-31T15:07:26.424284+00:00")
         # print(result)
         
         # Delete a report definition
-        print("\n[TEST] Delete CUSTOM-DATE-USER report...")
-        result = manager.delete_compliance_report("IOS-XR")
-        print(result)
+        # print("\n[TEST] Delete CUSTOM-DATE-USER report...")
+        # result = manager.delete_compliance_report("IOS-XR")
+        # print(result)
         
         # Delete a template
         # print("\n[TEST] Delete internal-dns template...")

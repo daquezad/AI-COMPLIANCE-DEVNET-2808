@@ -66,12 +66,12 @@ class NSOComplianceManager:
         # Device Selection Logic
         if device_check_all:
             cmds.append(f"set {base} device-check all-devices")
-        elif device_check_devices:
-            for dev in device_check_devices:
-                cmds.append(f"set {base} device-check device {dev}")
         elif device_check_device_groups:
             for group in device_check_device_groups:
                 cmds.append(f"set {base} device-check device-group {group}")
+        elif device_check_devices:
+            for dev in device_check_devices:
+                cmds.append(f"set {base} device-check device {dev}")
         elif device_check_select_xpath:
             cmds.append(f"set {base} device-check select-devices {device_check_select_xpath}")
 
@@ -89,14 +89,14 @@ class NSOComplianceManager:
         # Service Selection Logic
         if service_check_all:
             cmds.append(f"set {base} service-check all-services")
-        if service_check_services:
-            for svc in service_check_services:
-                cmds.append(f"set {base} service-check service {svc}")
         if service_check_service_types:
             for stype in service_check_service_types:
                 cmds.append(f"set {base} service-check service-type {stype}")
-        if service_check_select_xpath:
-            cmds.append(f"set {base} service-check select-services {service_check_select_xpath}")
+        # if service_check_services: #todo to be verified
+        #     for svc in service_check_services:
+        #         cmds.append(f"set {base} service-check service {svc}")
+        # if service_check_select_xpath: #todo to be verified
+        #     cmds.append(f"set {base} service-check select-services {service_check_select_xpath}")
 
         # Service Options
         if any([service_check_all, service_check_services, service_check_service_types, service_check_select_xpath]):
@@ -175,7 +175,7 @@ class NSOComplianceManager:
         return self.client.execute_read(f"request compliance report-results report {report_ids} remove")
 
     # =========================================================================
-    # 3. COMPLIANCE TEMPLATES
+    # 3. COMPLIANCE TEMPLATES to ve
     # =========================================================================
 
     def create_compliance_template(
@@ -203,16 +203,16 @@ class NSOComplianceManager:
         logger.info(f"Creating compliance template: {template_name}")
         return self.client.execute_config([" ".join(cmd_parts)])
 
-    def check_compliance_template(self, template_name: str, devices: List[str]) -> str:
-        """Checks a template against specific devices in real-time (Testing)."""
-        device_list = " ".join(devices)
-        cmds = [
-            f"edit compliance template {template_name}",
-            f"request check device [ {device_list} ]",
-            "top"
-        ]
-        logger.info(f"Checking template {template_name} against devices: {devices}")
-        return self.client.execute_config(cmds)
+    # def check_compliance_template(self, template_name: str, devices: List[str]) -> str:
+    #     """Checks a template against specific devices in real-time (Testing)."""
+    #     device_list = " ".join(devices)
+    #     cmds = [
+    #         f"edit compliance template {template_name}",
+    #         f"request check device [ {device_list} ]",
+    #         "top"
+    #     ]
+    #     logger.info(f"Checking template {template_name} against devices: {devices}")
+    #     return self.client.execute_config(cmds)
 
     def show_compliance_templates(self, template_name: Optional[str] = None) -> str:
         """Shows configuration for one or all compliance templates."""
@@ -221,7 +221,89 @@ class NSOComplianceManager:
             cmd += f" {template_name}"
         return self.client.execute_read(cmd)
 
+    def list_compliance_templates(self) -> list[str]:
+        """
+        Lists all available compliance template names in NSO.
+        
+        Retrieves the compliance templates and parses them to return only the template names
+        (without the 'compliance template ' prefix).
+        
+        Returns:
+            List of compliance template names (e.g., ['ntp_dns', 'acl-baseline'])
+        """
+        logger.info("Fetching all compliance template names from NSO.")
+        raw_output = self.client.execute_read("show compliance template")
+        
+        # Parse the output to extract just the template names
+        # Input format: "compliance template ntp_dns"
+        # Output format: "ntp_dns"
+        template_names = []
+        for line in raw_output.strip().split('\n'):
+            line = line.strip()
+            if line.startswith('compliance template '):
+                # Remove the prefix to get just the template name
+                template_name = line.replace('compliance template ', '')
+                template_names.append(template_name)
+        
+        return template_names
+
     def delete_compliance_template(self, template_name: str) -> str:
         """Deletes a compliance template."""
         logger.warning(f"Deleting compliance template: {template_name}")
         return self.client.execute_config([f"delete compliance template {template_name}"])
+
+    # =========================================================================
+    # 4. SERVICE 
+    # =========================================================================
+
+    def list_service_types(self) -> list[str]:
+        """
+        Lists all available service types in NSO.
+        
+        Retrieves the service types and parses them to return only the service names
+        (without the 'services service-type /ncs:services/' prefix).
+        
+        Returns:
+            List of service type names (e.g., ['loopback-demo:loopback-demo', 'loopback-tunisie:loopback-tunisie'])
+        """
+        logger.info("Fetching all service types from NSO.")
+        raw_output = self.client.execute_read("show services service-type")
+        
+        # Parse the output to extract just the service names
+        # Input format: "services service-type /ncs:services/loopback-demo:loopback-demo"
+        # Output format: "loopback-demo:loopback-demo"
+        service_types = []
+        for line in raw_output.strip().split('\n'):
+            line = line.strip()
+            if line.startswith('services service-type'):
+                # Remove the prefix to get just the service name
+                service_name = line.replace('services service-type ', '')
+                service_types.append(service_name)
+        
+        return service_types
+
+    def list_device_groups(self) -> list[str]:
+        """
+        Lists all available device groups in NSO.
+        
+        Retrieves the device groups and parses them to return only the group names.
+        
+        Returns:
+            List of device group names (e.g., ['dc-core', 'wan-routers', 'all-devices'])
+        """
+        logger.info("Fetching all device groups from NSO.")
+        raw_output = self.client.execute_read("show devices device-group | tab | de-select member")
+        
+        # Parse the output to extract just the device group names
+        # The output is a table with 'NAME' column header
+        device_groups = []
+        lines = raw_output.strip().split('\n')
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines, header lines, and separator lines
+            if not line or line.startswith('NAME') or line.startswith('-'):
+                continue
+            # The group name is the first (and only) column
+            device_groups.append(line)
+        
+        return device_groups
