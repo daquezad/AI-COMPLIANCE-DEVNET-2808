@@ -22,10 +22,10 @@ LOGGING_LEVEL = os.getenv("LOGGING_LEVEL", "INFO").upper()
 ENABLE_HTTP = os.getenv("ENABLE_HTTP", "true").lower() in ("true", "1", "yes")
 
 ## CNC Connection Settings
-CNC_USERNAME = os.getenv("CNC_USERNAME", "")
-CNC_PASSWORD = os.getenv("CNC_PASSWORD", "")
-CNC_HOST = os.getenv("CNC_HOST", "")
-CNC_PORT = os.getenv("CNC_PORT", "")
+CWM_USERNAME = os.getenv("CWM_USERNAME", "")
+CWM_PASSWORD = os.getenv("CWM_PASSWORD", "")
+CWM_HOST = os.getenv("CWM_HOST", "")
+CWM_PORT = os.getenv("CWM_PORT", "")
 COMPLIANCE_AGENT_PORT = int(os.getenv("COMPLIANCE_AGENT_PORT", 9090))
 COMPLIANCE_AGENT_IP = os.getenv("COMPLIANCE_AGENT_IP", "0.0.0.0")
 
