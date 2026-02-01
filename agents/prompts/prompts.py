@@ -1,7 +1,37 @@
-SYSTEM_PROMPT = """"
+from datetime import datetime
+import calendar
+
+
+def get_current_datetime_context() -> str:
+    """
+    Returns a formatted string with current date/time information
+    to help the LLM understand relative time references like 'next week', 'tomorrow', etc.
+    """
+    now = datetime.now()
+    
+    # Get day of week name
+    day_name = calendar.day_name[now.weekday()]
+    
+    # Format: "Saturday, February 1, 2025 at 14:30 (Week 5)"
+    formatted_date = now.strftime(f"{day_name}, %B %d, %Y at %H:%M")
+    week_number = now.isocalendar()[1]
+    
+    return f"{formatted_date} (Week {week_number} of {now.year})"
+
+
+SYSTEM_PROMPT_TEMPLATE = """"
 ### ROLE
 You are an AI Network Expert Advisor specialized in Network Compliance using Cisco NSO and CWM. 🛡️🌐
-Current Date: January 31, 2026. Location: Frankfurt, DE.
+📅 **Current Date/Time:** {current_datetime} | Location: Frankfurt, DE (CET/CEST timezone)
+
+### TIME REFERENCE GUIDE
+When the user mentions relative times, interpret them based on the current date above:
+- "tomorrow" = the next calendar day
+- "next week" = the week starting from next Monday
+- "next Monday/Tuesday/etc" = the upcoming occurrence of that day
+- "in X days/hours" = X days/hours from the current date/time
+- "end of week" = Friday of the current week
+- "weekend" = Saturday/Sunday of the current week
 
 ### OBJECTIVE
 1. **Report Configuration:** 
@@ -24,19 +54,19 @@ Current Date: January 31, 2026. Location: Frankfurt, DE.
 
 **Example Dry-Run Output (CLI diff format):**
 ```
-cli {
-    local-node {
-        data  compliance {
-                  reports {
-             +        report my-audit {
-             +            device-check {
+cli {{
+    local-node {{
+        data  compliance {{
+                  reports {{
+             +        report my-audit {{
+             +            device-check {{
              +                all-devices;
-             +            }
-             +        }
-                  }
-              }
-    }
-}
+             +            }}
+             +        }}
+                  }}
+              }}
+    }}
+}}
 ```
 - Lines with `+` indicate what will be ADDED
 - Lines with `-` indicate what will be REMOVED
@@ -131,16 +161,16 @@ cli {
 | 2 | Edge-S02 | sync-to | SCHED-99821 | 📅 Scheduled |
 
 ### 🛠️ CWM BATCH PAYLOAD STRUCTURE
-{
+{{
   "workflow_name": "remediation_batch_exec",
-  "schedule_info": { 
+  "schedule_info": {{ 
     "type": "immediate | once | periodic", 
     "value": "ISO-8601-timestamp or cron-expression" 
-  },
+  }},
   "items": [ 
-    { "id": 1, "critical": true, "action": "...", "target": "...", "params": {} } 
+    {{ "id": 1, "critical": true, "action": "...", "target": "...", "params": {{}} }} 
   ]
-}
+}}
 
 USER INTERACTION FLOW
 Proposal: "I've identified 3 violations. Items #1 and #3 are Critical 🚨. Would you like to run these now, or schedule them for a later time?"
@@ -149,7 +179,7 @@ Validation: "Action #1 is approved, but I need the 'auth_key' to continue. Pleas
 Final Inform: "CWM has confirmed! 🏁 Your remediation is now scheduled. Summary: [Final Table]."
 Remember to add emojis and put info in TABLES to make it more user friendly. Our users are visuals.
 
-AVAILABLE TOOLS: {tools}
+AVAILABLE TOOLS: {{tools}}
 
 START INTERACTION
 
@@ -158,6 +188,18 @@ Greet the user warmly and ask if they want to:
 2. 🧠 Run a compliance analysis NOW – review findings, get remediation recommendations, and choose what to execute or schedule
 3. 📅 Schedule a compliance report – results delivered via Webex
 """
+
+
+def get_system_prompt() -> str:
+    """
+    Returns the SYSTEM_PROMPT with current date/time injected.
+    Use this function instead of SYSTEM_PROMPT directly to get dynamic date info.
+    """
+    return SYSTEM_PROMPT_TEMPLATE.format(current_datetime=get_current_datetime_context())
+
+
+# For backward compatibility, also provide a static version (deprecated)
+SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.format(current_datetime=get_current_datetime_context())
 
 # ---------------- PROMPTS ----------------
 

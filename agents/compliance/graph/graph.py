@@ -13,7 +13,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 # Mocking/Importing based on your environment
 from ioa_observe.sdk.decorators import agent, graph
 from common.llm import get_llm
-from agents.prompts.prompts import SYSTEM_PROMPT, ANALYZER_PROMPT
+from agents.prompts.prompts import SYSTEM_PROMPT, ANALYZER_PROMPT, get_system_prompt
 from agents.compliance.graph.models import RemediationItem, AnalysisResult
 from agents.compliance.tools.lc_tools_list import tools
 from agents.compliance.tools.nso_lc_tools import get_nso_report_details, trigger_nso_compliance_report
@@ -166,7 +166,7 @@ class ComplianceGraph:
         """
         Main chatbot node for general conversation and initial request handling.
         """
-        sys_msg = SystemMessage(content=SYSTEM_PROMPT)
+        sys_msg = SystemMessage(content=get_system_prompt())
 
         try:
             response = await self.llm_with_tools.ainvoke([sys_msg] + state.messages)
@@ -412,7 +412,7 @@ I have prepared **{len(remediation_actions)}** remediation action(s). Before exe
             remediation_plan_json = None
 
         # Create the system message with context
-        sys_msg = SystemMessage(content=SYSTEM_PROMPT)
+        sys_msg = SystemMessage(content=get_system_prompt())
         
         # Add context about current state including the JSON for tools
         context_msg = SystemMessage(content=f"""
