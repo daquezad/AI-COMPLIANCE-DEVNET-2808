@@ -26,6 +26,11 @@ from langchain_core.tools import tool
 from agents.compliance.tools.connectors.nso_connector_cli.nso_client_cli import NSOCLIClient
 from agents.compliance.tools.connectors.nso_connector_cli.compliance_manager import NSOComplianceManager
 from agents.compliance.tools.connectors.nso_connector_cli.exeptions import NSOCLIError
+from agents.compliance.tools.connectors.nso_connector_cli.report_downloader import (
+    download_and_preprocess_report,
+    get_report_downloader,
+    preprocess_compliance_report
+)
 
 
 # from exceptions import NSOCLIError
@@ -229,7 +234,7 @@ def list_nso_compliance_results() -> Dict[str, Any]:
     try:
         output = _manager.list_compliance_reports()
         return {"success": True, "data": output}
-    except NSOError as e:
+    except NSOCLIError as e:
         return {"success": False, "error": str(e)}
 
 
@@ -651,6 +656,65 @@ def list_nso_device_groups() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+@tool
+def download_nso_compliance_report(report_url_or_id: str) -> Dict[str, Any]:
+    """
+    Download and preprocess a compliance report from NSO for analysis.
+    
+    This tool downloads a compliance report file from NSO using JSON-RPC authentication,
+    saves it locally, and preprocesses it for LLM analysis.
+    
+    Use this tool when:
+    - User wants to analyze a specific report by ID
+    - After running a compliance report, to fetch the full report content
+    - "Analyze report ID 5"
+    - "Download the compliance report from <URL>"
+    
+    The downloaded report is saved to a local volume for persistence and can be
+    used by the analyzer node for detailed compliance analysis.
+    
+    Args:
+        report_url_or_id: Either:
+            - Full URL: "http://localhost:8080/compliance-reports/report_2025-10-09T13:48:32.txt"
+            - Report ID: "5" or "2025-10-09T13:48:32.663282+00:00.txt"
+    
+    Returns:
+        success: True if download was successful
+        filepath: Local path where the report was saved
+        content: Preprocessed report content ready for analysis
+        report_id: The report identifier used
+    
+    Example Usage:
+        - "Download report 5 for analysis" → report_url_or_id="5"
+        - "Analyze the compliance report at http://..." → report_url_or_id="http://..."
+    """
+    logger.info(f"LLM Tool Call: download_nso_compliance_report -> {report_url_or_id}")
+    try:
+        filepath, content = download_and_preprocess_report(report_url_or_id)
+        
+        if filepath and content:
+            return {
+                "success": True,
+                "filepath": filepath,
+                "content": content,
+                "report_id": report_url_or_id,
+                "message": f"Report downloaded successfully to {filepath}"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to download report. Check if the report ID/URL is valid and NSO is accessible.",
+                "report_id": report_url_or_id
+            }
+    except Exception as e:
+        logger.error(f"Error downloading report: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "report_id": report_url_or_id
+        }
+
+
 # Export the list of tools for LangChain Agent initialization
 # These tools follow a typical compliance workflow:
 # 1. configure_nso_compliance_report - Define what to audit
@@ -665,17 +729,19 @@ def list_nso_device_groups() -> Dict[str, Any]:
 # 10. list_nso_service_types - Discover available service types
 # 11. list_nso_device_groups - Discover available device groups
 # 12. show_nso_compliance_report_config - View report definition configuration
+# 13. download_nso_compliance_report - Download and preprocess report for analysis
 nso_compliance_toolset = [
     configure_nso_compliance_report,
     run_nso_compliance_report,
     list_nso_compliance_results,
     list_nso_compliance_report_definitions,
-    create_nso_compliance_template,
+    # create_nso_compliance_template,
     list_nso_compliance_templates,
     show_nso_compliance_template,
     show_nso_compliance_report_config,
     delete_nso_compliance_report,
     remove_nso_compliance_report_results,
     list_nso_service_types,
-    list_nso_device_groups
+    list_nso_device_groups,
+    download_nso_compliance_report
 ]

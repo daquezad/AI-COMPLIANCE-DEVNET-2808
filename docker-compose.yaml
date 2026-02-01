@@ -39,5 +39,7 @@ services:
       - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
       - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
       - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allows container to reach host machine
     ports:
       - "9090:9090"

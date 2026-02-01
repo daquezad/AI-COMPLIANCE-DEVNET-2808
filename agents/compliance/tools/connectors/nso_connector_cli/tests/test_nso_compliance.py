@@ -381,9 +381,9 @@ if __name__ == "__main__":
         # Uncomment tests you want to run:
         
         # Test: Check all devices
-        # print("\n[TEST] Configure device-check-all report...")
-        # result = manager.configure_compliance_report("device-check-all", device_check_all=True)
-        # print(result)
+        print("\n[TEST] Configure device-check-all report...")
+        result = manager.configure_compliance_report("device-check-all", device_check_all=True,dry_run=True)
+        print(result)
         
         # # Test: Check specific devices
         # print("\n[TEST] Configure specific device report...")
@@ -421,9 +421,9 @@ if __name__ == "__main__":
         # print("\n--- 2. RUN COMPLIANCE REPORTS ---")
         
         # Test: Run report with HTML output
-        print("\n[TEST] Run group-check report (HTML)...")
-        result = manager.run_compliance_report("l3vpn-check", title="My First Report from python", outformat="html")
-        print(result)
+        # print("\n[TEST] Run group-check report (HTML)...")
+        # result = manager.run_compliance_report("l3vpn-check", title="My First Report from python", outformat="html")
+        # print(result)
         
         # Test: Run report with time range
         # print("\n[TEST] Run gold-check report with time range...")

@@ -9,6 +9,7 @@ RUN apt-get update && \
         wget \
         iputils-ping \
         build-essential \
+        openssh-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

@@ -29,9 +29,34 @@ CNC_PORT = os.getenv("CNC_PORT", "")
 COMPLIANCE_AGENT_PORT = int(os.getenv("COMPLIANCE_AGENT_PORT", 9090))
 COMPLIANCE_AGENT_IP = os.getenv("COMPLIANCE_AGENT_IP", "0.0.0.0")
 
+
+def _resolve_host(host: str, fallback: str = "127.0.0.1") -> str:
+    """
+    Resolve host, falling back if host.docker.internal doesn't resolve (running outside Docker).
+    """
+    if host == "host.docker.internal":
+        import socket
+        try:
+            socket.gethostbyname(host)
+            return host
+        except socket.gaierror:
+            # host.docker.internal doesn't exist - we're not in Docker
+            return fallback
+    return host
+
+
 ## NSO Connection Settings (pyATS Testbed)
-NSO_HOST = os.getenv("NSO_HOST", "127.0.0.1")
-NSO_CLI_PORT = int(os.getenv("NSO_PORT", "2024"))
+_nso_host_raw = os.getenv("NSO_HOST", "127.0.0.1")
+NSO_HOST = _resolve_host(_nso_host_raw, "127.0.0.1")
+NSO_CLI_PORT = int(os.getenv("NSO_CLI_PORT", os.getenv("NSO_PORT", "2024")))
 NSO_USERNAME = os.getenv("NSO_USERNAME", "admin")
 NSO_PASSWORD = os.getenv("NSO_PASSWORD", "admin")
 NSO_CLI_PROTOCOL = os.getenv("NSO_CLI_PROTOCOL", "ssh")
+
+## NSO JSON-RPC Settings (for report downloads)
+NSO_JSONRPC_PORT = int(os.getenv("NSO_JSONRPC_PORT", "8080"))
+NSO_PROTOCOL = os.getenv("NSO_PROTOCOL", "http")
+NSO_VERIFY_SSL = os.getenv("NSO_VERIFY_SSL", "false").lower() == "true"
+NSO_REPORTS_DIR = os.getenv("NSO_REPORTS_DIR", "/tmp/compliance-reports")
+# NSO_HOST_DOWNLOAD uses NSO_HOST by default
+NSO_HOST_DOWNLOAD = os.getenv("NSO_HOST_DOWNLOAD", "localhost")

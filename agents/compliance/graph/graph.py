@@ -17,6 +17,10 @@ from agents.prompts.prompts import SYSTEM_PROMPT, ANALYZER_PROMPT
 from agents.compliance.graph.models import RemediationItem, AnalysisResult
 from agents.compliance.tools.lc_tools_list import tools
 from agents.compliance.tools.nso_lc_tools import get_nso_report_details, trigger_nso_compliance_report
+from agents.compliance.tools.connectors.nso_connector_cli.report_downloader import (
+    download_and_preprocess_report,
+    preprocess_compliance_report
+)
 
 logger = logging.getLogger("devnet.compliance.chat.graph")
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +34,8 @@ class GraphState(BaseModel):
     """
     messages: Annotated[list, add_messages] = []
     report_id: Optional[str] = Field(default=None, description="The NSO compliance report ID")
+    report_url: Optional[str] = Field(default=None, description="URL to download the compliance report")
+    report_content: Optional[str] = Field(default=None, description="Downloaded and preprocessed report content")
     summary: Optional[str] = Field(default=None, description="Executive summary from LLM analysis")
     remediation_plan: List[RemediationItem] = Field(default_factory=list, description="List of remediation items")
     analysis_complete: bool = Field(default=False, description="Flag indicating analysis is complete")
@@ -119,7 +125,7 @@ class ComplianceGraph:
     def _route_after_tools(self, state: GraphState) -> str:
         """
         Routes after tool execution:
-        - 'analyzer' if trigger_nso_compliance_report was called AND returned success
+        - 'analyzer' if trigger_nso_compliance_report or download_nso_compliance_report was called AND returned success
         - 'chatbot' for other tool calls or failed report execution
         """
         # Check if the last tool message contains a valid report result
@@ -127,17 +133,19 @@ class ComplianceGraph:
             if isinstance(msg, ToolMessage):
                 try:
                     content = msg.content
-                    if isinstance(content, str) and 'report_id' in content:
-                        # Parse the tool result to extract report_id
+                    # Check for report_id OR report_url OR content (from download tool)
+                    if isinstance(content, str) and ('report_id' in content or 'report_url' in content or 'filepath' in content):
+                        # Parse the tool result
                         import ast
                         result = ast.literal_eval(content)
                         
                         # Only route to analyzer if:
                         # 1. Tool execution was successful
-                        # 2. report_id is present and valid
+                        # 2. report_id, report_url, or content is present
                         # 3. Analysis hasn't been completed yet
-                        if result.get('success') == True and result.get('report_id') and not state.analysis_complete:
-                            logger.info(f"Routing to analyzer - valid report_id: {result.get('report_id')}")
+                        has_report_data = result.get('report_id') or result.get('report_url') or result.get('content')
+                        if result.get('success') == True and has_report_data and not state.analysis_complete:
+                            logger.info(f"Routing to analyzer - report_id: {result.get('report_id')}, has_content: {bool(result.get('content'))}")
                             return "analyzer"
                         elif result.get('success') == False:
                             logger.warning(f"Report execution failed: {result.get('error', 'Unknown error')}")
@@ -166,53 +174,101 @@ class ComplianceGraph:
 
     async def _analyzer_node(self, state: GraphState) -> Dict[str, Any]:
         """
-        Fetches report details using report_id (extracted from tool message)
-        and uses LLM with structured output to analyze the compliance data.
+        Analyzes compliance reports using LLM with structured output.
+        
+        This node can be triggered in two ways:
+        1. After run_nso_compliance_report tool execution (extracts report_id/URL from tool message)
+        2. Directly by user request to analyze a specific report ID
+        
+        Workflow:
+        1. Extract report_id/URL from tool message or state
+        2. Download the report file from NSO via JSON-RPC
+        3. Preprocess the report content (remove sensitive data, normalize format)
+        4. Pass to LLM for structured analysis
+        5. Generate remediation plan
         """
-        # Extract report_id from the tool message
+        # Extract report_id and report_url from the tool message or state
         report_id = state.report_id
-        if not report_id:
+        report_url = state.report_url
+        report_content = state.report_content
+        
+        # Try to extract from tool messages if not in state
+        if not report_id or not report_url:
             for msg in reversed(state.messages):
                 if isinstance(msg, ToolMessage):
                     try:
                         import ast
                         result = ast.literal_eval(msg.content)
-                        if result.get('report_id'):
+                        if result.get('report_id') and not report_id:
                             report_id = result.get('report_id')
+                        if result.get('report_url') and not report_url:
+                            report_url = result.get('report_url')
+                        if result.get('content') and not report_content:
+                            report_content = result.get('content')
+                        if report_id or report_url:
                             break
                     except:
                         pass
         
+        # Also check user messages for explicit report ID requests
         if not report_id:
+            for msg in reversed(state.messages):
+                if isinstance(msg, HumanMessage):
+                    content = msg.content.lower()
+                    # Look for patterns like "analyze report 5" or "report id 5"
+                    import re
+                    match = re.search(r'(?:report\s*(?:id)?|analyze)\s*[:#]?\s*(\d+)', content)
+                    if match:
+                        report_id = match.group(1)
+                        logger.info(f"Extracted report_id from user message: {report_id}")
+                        break
+        
+        if not report_id and not report_url and not report_content:
             return {
-                "messages": [AIMessage(content="⚠️ No report ID found. Please trigger a compliance report first.")],
+                "messages": [AIMessage(content="⚠️ No report ID or URL found. Please either:\n1. Run a compliance report first using `run_nso_compliance_report`\n2. Specify a report ID to analyze (e.g., 'analyze report 5')")],
                 "analysis_complete": False
             }
         
-        logger.info(f"Analyzer: Processing report ID: {report_id}")
+        logger.info(f"Analyzer: Processing report ID: {report_id}, URL: {report_url}")
         
         try:
-            # Fetch the report details using the NSO tool
-            report_result = get_nso_report_details.invoke({"report_id": report_id})
+            # Step 1: Download the report if we don't have content yet
+            if not report_content:
+                logger.info(f"Downloading report from NSO...")
+                
+                # Use URL if available, otherwise use report_id
+                download_target = report_url if report_url else report_id
+                filepath, report_content = download_and_preprocess_report(download_target)
+                
+                if not report_content:
+                    # Fallback to the old method if download fails
+                    logger.warning("Download failed, falling back to get_nso_report_details")
+                    report_result = get_nso_report_details.invoke({"report_id": report_id})
+                    
+                    if not report_result.get('success'):
+                        return {
+                            "messages": [AIMessage(content=f"⚠️ Failed to fetch report: {report_result.get('error')}")],
+                            "analysis_complete": False
+                        }
+                    
+                    report_data = report_result.get('report', {})
+                    report_content = json.dumps(report_data, indent=2)
+                else:
+                    logger.info(f"Report downloaded successfully to: {filepath}")
             
-            if not report_result.get('success'):
-                return {
-                    "messages": [AIMessage(content=f"⚠️ Failed to fetch report: {report_result.get('error')}")],
-                    "analysis_complete": False
-                }
+            # Step 2: Preprocess the report content
+            # (preprocess_compliance_report is currently a pass-through but can be extended)
+            preprocessed_content = preprocess_compliance_report(report_content)
             
-            report_data = report_result.get('report', {})
-            report_json = json.dumps(report_data, indent=2)
-            
-            # Use LLM with structured output to analyze the report
+            # Step 3: Use LLM with structured output to analyze the report
             analyzer_llm = self.llm.with_structured_output(AnalysisResult)
             
-            analysis_prompt = ANALYZER_PROMPT.format(report_data=report_json)
+            analysis_prompt = ANALYZER_PROMPT.format(report_data=preprocessed_content)
             analysis_result = await analyzer_llm.ainvoke([
                 SystemMessage(content=analysis_prompt)
             ])
             
-            # Convert analysis result to remediation items with proper status
+            # Step 4: Convert analysis result to remediation items with proper status
             remediation_plan = []
             for item in analysis_result.remediation_items:
                 remediation_item = RemediationItem(
@@ -230,6 +286,8 @@ class ComplianceGraph:
             
             return {
                 "report_id": report_id,
+                "report_url": report_url,
+                "report_content": preprocessed_content,
                 "summary": analysis_result.summary,
                 "remediation_plan": remediation_plan,
                 "analysis_complete": True,

@@ -10,7 +10,8 @@ from config.config import (
     NSO_CLI_PORT,
     NSO_USERNAME,
     NSO_PASSWORD,
-    NSO_CLI_PROTOCOL
+    NSO_CLI_PROTOCOL,
+    NSO_HOST_DOWNLOAD
 )
 
 # Initialize the requested logger
@@ -23,7 +24,7 @@ def generate_testbed_from_env() -> str:
     
     Uses configuration from config/config.py:
         NSO_HOST: NSO server IP address (default: 127.0.0.1)
-        NSO_PORT: NSO SSH port (default: 2024)
+        NSO_CLI_PORT: NSO SSH port (default: 2024)
         NSO_USERNAME: NSO username (default: admin)
         NSO_PASSWORD: NSO password (default: admin)
         NSO_PROTOCOL: Connection protocol (default: ssh)
@@ -60,7 +61,8 @@ def generate_testbed_from_env() -> str:
                     "cli": {
                         "protocol": NSO_CLI_PROTOCOL,
                         "ip": NSO_HOST,
-                        "port": NSO_CLI_PORT
+                        "port": NSO_CLI_PORT,
+                        "ssh_options": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
                     }
                 },
                 "credentials": {
