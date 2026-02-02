@@ -33,6 +33,7 @@ from agents.compliance.tools.connectors.nso_connector_jsonrpc.report_downloader 
     get_report_downloader,
     preprocess_compliance_report
 )
+from agents.compliance.tools.connectors.nso_connector_rest import get_compliance_reports_list
 
 
 # from exceptions import NSOCLIError
@@ -338,7 +339,7 @@ def delete_nso_compliance_report(report_name: str) -> Dict[str, Any]:
 @tool
 def list_nso_compliance_report_definitions() -> Dict[str, Any]:
     """
-    List all compliance report DEFINITIONS configured in NSO.
+    List all compliance report DEFINITIONS configured in NSO via RESTCONF API.
     
     This tool shows all the report configurations (WHAT to audit), NOT the historical
     execution results. Use this to see which reports are available to run.
@@ -349,7 +350,9 @@ def list_nso_compliance_report_definitions() -> Dict[str, Any]:
     
     PURPOSE: Discover which compliance reports are configured in NSO, including:
     - Report names available for execution
-    - Running status (whether a report is currently executing)
+    - Device checks configuration
+    - Service checks configuration
+    - Compliance templates assigned
     
     WHEN TO USE:
     - "What reports can I run?" → Use this tool
@@ -360,20 +363,81 @@ def list_nso_compliance_report_definitions() -> Dict[str, Any]:
     
     Returns:
         success: True if query was successful
-        data: NSO output showing all report definitions with their status
+        data: NSO output showing all report definitions
+        reports: List of report names (if successful)
     
-    Example Output:
-        compliance reports report CUSTOM_COMPLIANCE_PYTHON
-         status running false
-        compliance reports report weekly-audit
-         status running false
+    Example Response:
+        {
+            "success": true,
+            "data": { "tailf-ncs:report": [...] },
+            "reports": ["weekly-audit", "dc-core-check"]
+        }
     """
-    logger.info("LLM Tool Call: list_nso_compliance_report_definitions")
+    logger.info("LLM Tool Call: list_nso_compliance_report_definitions (RESTCONF)")
     try:
-        output = _manager.list_compliance_report_definitions()
-        return {"success": True, "data": output}
+        result = get_compliance_reports_list()
+        
+        if result.get("success"):
+            # Extract report names for easier access
+            reports = []
+            data = result.get("data", {})
+            if data and "tailf-ncs:report" in data:
+                reports = [r.get("name") for r in data["tailf-ncs:report"] if r.get("name")]
+            
+            return {
+                "success": True,
+                "data": data,
+                "reports": reports,
+                "count": len(reports)
+            }
+        else:
+            return result
+            
     except Exception as e:
+        logger.error(f"Error listing compliance report definitions: {e}")
         return {"success": False, "error": str(e)}
+
+
+# OLD CLI-BASED IMPLEMENTATION - COMMENTED OUT
+# @tool
+# def list_nso_compliance_report_definitions_cli() -> Dict[str, Any]:
+#     """
+#     List all compliance report DEFINITIONS configured in NSO (CLI version).
+#     
+#     This tool shows all the report configurations (WHAT to audit), NOT the historical
+#     execution results. Use this to see which reports are available to run.
+#     
+#     DIFFERENCE FROM list_nso_compliance_results:
+#     - list_nso_compliance_report_definitions: Shows CONFIGURED reports (the templates)
+#     - list_nso_compliance_results: Shows EXECUTED report results (historical audits)
+#     
+#     PURPOSE: Discover which compliance reports are configured in NSO, including:
+#     - Report names available for execution
+#     - Running status (whether a report is currently executing)
+#     
+#     WHEN TO USE:
+#     - "What reports can I run?" → Use this tool
+#     - "Show me all configured compliance reports"
+#     - "List available report definitions"
+#     - Before running a report to verify it exists
+#     - Before deleting a report to confirm its name
+#     
+#     Returns:
+#         success: True if query was successful
+#         data: NSO output showing all report definitions with their status
+#     
+#     Example Output:
+#         compliance reports report CUSTOM_COMPLIANCE_PYTHON
+#          status running false
+#         compliance reports report weekly-audit
+#          status running false
+#     """
+#     logger.info("LLM Tool Call: list_nso_compliance_report_definitions")
+#     try:
+#         output = _manager.list_compliance_report_definitions()
+#         return {"success": True, "data": output}
+#     except Exception as e:
+#         return {"success": False, "error": str(e)}
 
 
 @tool
@@ -751,8 +815,8 @@ nso_compliance_toolset = [
     configure_nso_compliance_report,
     run_nso_compliance_report,
     list_nso_compliance_results,
-    list_nso_compliance_report_definitions,
-    # create_nso_compliance_template,
+    # list_nso_compliance_report_definitions, old ersion with cli 
+    # create_nso_compliance_template, to be review 
     list_nso_compliance_templates,
     show_nso_compliance_template,
     show_nso_compliance_report_config,

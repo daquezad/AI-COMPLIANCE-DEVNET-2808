@@ -1,56 +1,78 @@
 """
 Remediation Execution Tools for NSO compliance remediation.
-These tools execute remediation actions: sync-to, re-deploy, apply-template.
+These tools execute remediation actions: sync-to, re-deploy, apply-template via RESTCONF API.
+
+The main entry point is execute_remediation_plan which processes a batch of remediation actions.
+Individual actions (sync-to, re-deploy, apply-template) are internal helpers called by the batch executor.
 """
 import json
 import logging
 from typing import Dict, Any, List
 from langchain_core.tools import tool
 
+from agents.compliance.tools.connectors.nso_connector_rest import (
+    sync_to_device,
+    redeploy_service,
+    apply_compliance_template,
+    check_device_sync_status
+)
+
 logger = logging.getLogger("devnet.compliance.tools.remediation")
 
 
 # =============================================================================
-# REMEDIATION ACTION HANDLERS (Abstract - ready for API implementation)
+# INTERNAL REMEDIATION HANDLERS (called by execute_remediation_plan)
 # =============================================================================
 
 def _execute_sync_to(target: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Execute a sync-to action on NSO devices.
+    Execute a sync-to action on NSO devices (NSO → Device).
     
     Args:
         target: Dictionary containing one of:
-            - device_names: List of device names to sync
-            - device_group: Name of a device group to sync
-            - device_name: Single device name to sync
+            - device_name or device: Single device name
+            - device_names: List of device names
     
     Returns:
         Dictionary with execution result
     """
+    device_name = target.get("device_name") or target.get("device")
     device_names = target.get("device_names", [])
-    device_group = target.get("device_group")
-    device_name = target.get("device_name")
     
-    # Normalize to list of devices
-    devices = []
-    if device_names:
-        devices = device_names if isinstance(device_names, list) else [device_names]
-    elif device_group:
-        # TODO: Resolve device group to list of devices via NSO API
-        devices = [f"<devices-from-group:{device_group}>"]
-    elif device_name:
-        devices = [device_name]
-    
-    logger.info(f"Executing sync-to on devices: {devices}")
-    
-    # TODO: Replace with actual NSO API call
-    # Example: nso_sync_to(devices)
-    return {
-        "action": "sync-to",
-        "status": "pending_implementation",
-        "devices": devices,
-        "message": f"sync-to action for {len(devices)} device(s) - API call not yet implemented"
-    }
+    if device_name:
+        logger.info(f"Executing sync-to on device: {device_name}")
+        result = sync_to_device(device_name)
+        if result.get("success"):
+            return {
+                "success": True,
+                "action": "sync-to",
+                "device": device_name,
+                "message": f"✅ Successfully synced to device '{device_name}'"
+            }
+        else:
+            return {
+                "success": False,
+                "action": "sync-to",
+                "device": device_name,
+                "error": result.get("error"),
+                "message": f"❌ Failed to sync to device '{device_name}'"
+            }
+    elif device_names:
+        # Execute sync-to for multiple devices
+        logger.info(f"Executing sync-to on {len(device_names)} devices: {device_names}")
+        results = []
+        for dev in device_names:
+            results.append(sync_to_device(dev))
+        all_success = all(r.get("success") for r in results)
+        return {
+            "success": all_success,
+            "action": "sync-to",
+            "devices": device_names,
+            "results": results,
+            "message": f"{'✅' if all_success else '❌'} Synced to {len(device_names)} device(s)"
+        }
+    else:
+        return {"success": False, "error": "No device specified for sync-to action"}
 
 
 def _execute_redeploy(service_type: str, service_instance: str) -> Dict[str, Any]:
@@ -58,23 +80,34 @@ def _execute_redeploy(service_type: str, service_instance: str) -> Dict[str, Any
     Execute a re-deploy action on an NSO service.
     
     Args:
-        service_type: The type/path of the service (e.g., 'ntp', 'dns', 'l3vpn')
-        service_instance: The service instance name to redeploy
+        service_type: The service type/model (e.g., "loopback-tunisie")
+        service_instance: The service instance name (e.g., "TEST-Loopback")
     
     Returns:
         Dictionary with execution result
     """
     logger.info(f"Executing re-deploy on service: {service_type}/{service_instance}")
     
-    # TODO: Replace with actual NSO API call
-    # Example: nso_redeploy_service(service_type, service_instance)
-    return {
-        "action": "re-deploy",
-        "status": "pending_implementation",
-        "service_type": service_type,
-        "service_instance": service_instance,
-        "message": f"re-deploy action for {service_type}/{service_instance} - API call not yet implemented"
-    }
+    # Pass service_type and service_instance separately - redeploy_service builds the correct path
+    result = redeploy_service(service_type, service_instance)
+    
+    if result.get("success"):
+        return {
+            "success": True,
+            "action": "re-deploy",
+            "service_type": service_type,
+            "service_instance": service_instance,
+            "message": f"✅ Successfully re-deployed service '{service_type}/{service_instance}'"
+        }
+    else:
+        return {
+            "success": False,
+            "action": "re-deploy",
+            "service_type": service_type,
+            "service_instance": service_instance,
+            "error": result.get("error"),
+            "message": f"❌ Failed to re-deploy service '{service_type}/{service_instance}'"
+        }
 
 
 def _execute_apply_template(template_name: str, target: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,44 +115,162 @@ def _execute_apply_template(template_name: str, target: Dict[str, Any]) -> Dict[
     Execute an apply-template action on NSO devices.
     
     Args:
-        template_name: Name of the NSO template to apply
-        target: Dictionary containing one of:
-            - device_names: List of device names to apply template to
-            - device_group: Name of a device group
-            - device_name: Single device name
+        template_name: Name of the compliance template to apply
+        target: Dictionary containing device_name, device_names (list), or device_group
     
     Returns:
         Dictionary with execution result
     """
+    # Handle single device
+    device_name = target.get("device_name") or target.get("device")
+    
+    # Handle multiple devices
     device_names = target.get("device_names", [])
+    
+    # Handle device group
     device_group = target.get("device_group")
-    device_name = target.get("device_name")
     
-    # Normalize to list of devices
-    devices = []
-    if device_names:
-        devices = device_names if isinstance(device_names, list) else [device_names]
+    if device_name:
+        # Single device execution
+        logger.info(f"Applying template '{template_name}' to device: {device_name}")
+        result = apply_compliance_template(device_name, template_name)
+        
+        if result.get("success"):
+            return {
+                "success": True,
+                "action": "apply-template",
+                "device": device_name,
+                "template": template_name,
+                "message": f"✅ Successfully applied template '{template_name}' to device '{device_name}'"
+            }
+        else:
+            return {
+                "success": False,
+                "action": "apply-template",
+                "device": device_name,
+                "template": template_name,
+                "error": result.get("error"),
+                "message": f"❌ Failed to apply template '{template_name}' to device '{device_name}'"
+            }
+    
+    elif device_names:
+        # Multiple devices execution
+        results = []
+        failed = []
+        
+        for dev in device_names:
+            logger.info(f"Applying template '{template_name}' to device: {dev}")
+            result = apply_compliance_template(dev, template_name)
+            
+            if result.get("success"):
+                results.append(f"✅ {dev}")
+            else:
+                failed.append(f"❌ {dev}: {result.get('error', 'Unknown error')}")
+        
+        success = len(failed) == 0
+        return {
+            "success": success,
+            "action": "apply-template",
+            "devices": device_names,
+            "template": template_name,
+            "successful": results,
+            "failed": failed,
+            "message": f"Applied template '{template_name}' to {len(results)}/{len(device_names)} devices" + 
+                       (f". Failed: {', '.join(failed)}" if failed else "")
+        }
+    
     elif device_group:
-        # TODO: Resolve device group to list of devices via NSO API
-        devices = [f"<devices-from-group:{device_group}>"]
-    elif device_name:
-        devices = [device_name]
+        # Device group execution - apply to all devices in the group
+        logger.info(f"Applying template '{template_name}' to device group: {device_group}")
+        
+        # Get devices from the group
+        from agents.compliance.tools.connectors.nso_connector_rest.api.nso_config import get_devices_group
+        group_result = get_devices_group(device_group)
+        
+        if not group_result.get("success"):
+            return {
+                "success": False,
+                "action": "apply-template",
+                "device_group": device_group,
+                "template": template_name,
+                "error": group_result.get("error", "Failed to get device group"),
+                "message": f"❌ Failed to get devices from group '{device_group}'"
+            }
+        
+        devices = group_result.get("devices", [])
+        if not devices:
+            return {
+                "success": False,
+                "action": "apply-template",
+                "device_group": device_group,
+                "template": template_name,
+                "error": "No devices found in group",
+                "message": f"❌ No devices found in group '{device_group}'"
+            }
+        
+        # Apply to all devices in group
+        results = []
+        failed = []
+        
+        for dev in devices:
+            logger.info(f"Applying template '{template_name}' to device: {dev}")
+            result = apply_compliance_template(dev, template_name)
+            
+            if result.get("success"):
+                results.append(f"✅ {dev}")
+            else:
+                failed.append(f"❌ {dev}: {result.get('error', 'Unknown error')}")
+        
+        success = len(failed) == 0
+        return {
+            "success": success,
+            "action": "apply-template",
+            "device_group": device_group,
+            "devices": devices,
+            "template": template_name,
+            "successful": results,
+            "failed": failed,
+            "message": f"Applied template '{template_name}' to {len(results)}/{len(devices)} devices in group '{device_group}'" + 
+                       (f". Failed: {', '.join(failed)}" if failed else "")
+        }
     
-    logger.info(f"Executing apply-template '{template_name}' on devices: {devices}")
+    else:
+        return {"success": False, "error": "No device specified for apply-template action. Provide 'device_name', 'device_names', or 'device_group' in target."}
+
+
+def _check_device_sync(device_name: str) -> Dict[str, Any]:
+    """
+    Check if a device is in sync with NSO.
     
-    # TODO: Replace with actual NSO API call
-    # Example: nso_apply_template(template_name, devices)
-    return {
-        "action": "apply-template",
-        "status": "pending_implementation",
-        "template_name": template_name,
-        "devices": devices,
-        "message": f"apply-template '{template_name}' for {len(devices)} device(s) - API call not yet implemented"
-    }
+    Args:
+        device_name: Name of the device to check
+    
+    Returns:
+        Dictionary with sync status
+    """
+    logger.info(f"Checking sync status for device: {device_name}")
+    result = check_device_sync_status(device_name)
+    
+    if result.get("success"):
+        data = result.get("data", {})
+        in_sync = "in-sync" in str(data).lower()
+        return {
+            "success": True,
+            "device": device_name,
+            "in_sync": in_sync,
+            "message": f"Device '{device_name}' is {'in sync ✅' if in_sync else 'OUT OF SYNC ⚠️'}"
+        }
+    else:
+        return {
+            "success": False,
+            "device": device_name,
+            "error": result.get("error"),
+            "message": f"❌ Failed to check sync status for '{device_name}'"
+        }
 
 
 # =============================================================================
-# LANGCHAIN TOOLS
+# LANGCHAIN TOOL - BATCH REMEDIATION EXECUTOR
 # =============================================================================
 
 @tool
@@ -206,6 +357,7 @@ def execute_remediation_plan(remediation_plan_json: str) -> Dict[str, Any]:
         action_type = action_item.get("action", "").lower()
         
         logger.info(f"Processing action {action_id}: {action_type}")
+        logger.info(f"Action item details: {json.dumps(action_item, indent=2)}")
         
         try:
             if action_type == "sync-to":
@@ -219,11 +371,21 @@ def execute_remediation_plan(remediation_plan_json: str) -> Dict[str, Any]:
                 service_instance = action_item.get("service_instance")
                 if not service_type or not service_instance:
                     raise ValueError("re-deploy action requires 'service_type' and 'service_instance'")
+                
+                # Handle case where LLM incorrectly puts "service_type/instance" in service_instance
+                if "/" in service_instance:
+                    # If service_instance contains a slash, extract just the instance name
+                    parts = service_instance.split("/")
+                    service_instance = parts[-1]  # Take the last part as the actual instance name
+                    logger.info(f"Extracted instance name from path: {service_instance}")
+                
+                logger.info(f"Re-deploy: service_type={service_type}, service_instance={service_instance}")
                 result = _execute_redeploy(service_type, service_instance)
                 
             elif action_type == "apply-template":
                 template_name = action_item.get("template_name")
                 target = action_item.get("target", {})
+                logger.info(f"apply-template: template_name={template_name}, target={target}")
                 if not template_name:
                     raise ValueError("apply-template action requires 'template_name'")
                 if not target:
@@ -260,7 +422,7 @@ def execute_remediation_plan(remediation_plan_json: str) -> Dict[str, Any]:
     }
 
 
-# Export tools list
+# Export tools list - only the batch executor is exposed as a LangChain tool
 remediation_tools = [
     execute_remediation_plan,
 ]

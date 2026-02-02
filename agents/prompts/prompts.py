@@ -226,11 +226,11 @@ The compliance report HTML has specific sections that map to remediation actions
      → action="apply-template", target="Core-R01", details="NTP_Baseline"
 
 3. **<h2>Services out of sync</h2>** → Action: "re-deploy"
-   - <h3>/services/service-type:service-type{instance}</h3> → Service path with instance
+   - <h3>/services/service-type:service-type{{instance}}</h3> → Service path with instance
    - <p>Service ... out of sync</p> → Service instance info
    - Example:
-     <h3>/services/loopback-tunisie:loopback-tunisie{TEST-Loopback}</h3>
-     <p>Service /services/loopback-tunisie:loopback-tunisie{TEST-Loopback} out of sync</p>
+     <h3>/services/loopback-tunisie:loopback-tunisie{{TEST-Loopback}}</h3>
+     <p>Service /services/loopback-tunisie:loopback-tunisie{{TEST-Loopback}} out of sync</p>
      → action="re-deploy", target="loopback-tunisie", details="loopback-tunisie/TEST-Loopback"
 
 YOUR TASK:
@@ -267,8 +267,8 @@ REMEDIATION ITEM STRUCTURE:
 
 EXAMPLE remediation_items:
 [
-    {"id": 1, "critical": true, "action": "sync-to", "target": "xr9kv-0", "details": "Sync device to NSO", "status": "Pending 🟡"},
-    {"id": 2, "critical": false, "action": "re-deploy", "target": "loopback-tunisie", "details": "loopback-tunisie/TEST-Loopback", "status": "Pending 🟡"},
-    {"id": 3, "critical": true, "action": "apply-template", "target": "Core-R01", "details": "NTP_Baseline", "status": "Pending 🟡"}
+    {{"id": 1, "critical": true, "action": "sync-to", "target": "xr9kv-0", "details": "Sync device to NSO", "status": "Pending 🟡"}},
+    {{"id": 2, "critical": false, "action": "re-deploy", "target": "loopback-tunisie", "details": "loopback-tunisie/TEST-Loopback", "status": "Pending 🟡"}},
+    {{"id": 3, "critical": true, "action": "apply-template", "target": "Core-R01", "details": "NTP_Baseline", "status": "Pending 🟡"}}
 ]
 """

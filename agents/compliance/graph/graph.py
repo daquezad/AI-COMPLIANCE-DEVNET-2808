@@ -72,6 +72,54 @@ class ComplianceGraph:
 
         self.graph = self.build_graph()
 
+    def _parse_tool_content(self, content: Any) -> Optional[Dict[str, Any]]:
+        """
+        Safely parse tool message content to a dictionary.
+        Handles both JSON strings and Python dict strings (with True/False/None).
+        
+        Args:
+            content: The content from a ToolMessage (can be str, dict, or other)
+            
+        Returns:
+            Parsed dictionary or None if parsing fails
+        """
+        import json
+        import ast
+        
+        # If already a dict, return as-is
+        if isinstance(content, dict):
+            return content
+            
+        # If not a string, can't parse
+        if not isinstance(content, str):
+            logger.warning(f"Tool content is not a string: {type(content)}")
+            return None
+        
+        # Try JSON first (handles lowercase true/false/null)
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        
+        # Try converting Python-style booleans to JSON-style
+        try:
+            # Replace Python booleans/None with JSON equivalents
+            json_compatible = content.replace("True", "true").replace("False", "false").replace("None", "null")
+            return json.loads(json_compatible)
+        except json.JSONDecodeError:
+            pass
+        
+        # Last resort: ast.literal_eval for Python literals
+        try:
+            result = ast.literal_eval(content)
+            if isinstance(result, dict):
+                return result
+        except (ValueError, SyntaxError) as e:
+            logger.debug(f"ast.literal_eval failed: {e}")
+        
+        logger.error(f"Failed to parse tool content: {content[:200]}...")
+        return None
+
     @graph(name="compliance_graph")
     def build_graph(self) -> CompiledStateGraph:
         """
@@ -138,9 +186,11 @@ class ComplianceGraph:
                     content = msg.content
                     # Check for report_id OR report_url OR content (from download tool)
                     if isinstance(content, str) and ('report_id' in content or 'report_url' in content or 'filepath' in content):
-                        # Parse the tool result
-                        import ast
-                        result = ast.literal_eval(content)
+                        # Parse the tool result - try JSON first, then ast.literal_eval as fallback
+                        result = self._parse_tool_content(content)
+                        if result is None:
+                            logger.error("Failed to parse tool result content")
+                            return "chatbot"
                         
                         # Only route to analyzer if:
                         # 1. Tool execution was successful
@@ -200,18 +250,18 @@ class ComplianceGraph:
             for msg in reversed(state.messages):
                 if isinstance(msg, ToolMessage):
                     try:
-                        import ast
-                        result = ast.literal_eval(msg.content)
-                        if result.get('report_id') and not report_id:
-                            report_id = result.get('report_id')
-                        if result.get('report_url') and not report_url:
-                            report_url = result.get('report_url')
-                        if result.get('file_path') and not report_file_path:
-                            report_file_path = result.get('file_path')
-                        if result.get('content') and not report_content:
-                            report_content = result.get('content')
-                        if report_id or report_url or report_file_path:
-                            break
+                        result = self._parse_tool_content(msg.content)
+                        if result:
+                            if result.get('report_id') and not report_id:
+                                report_id = result.get('report_id')
+                            if result.get('report_url') and not report_url:
+                                report_url = result.get('report_url')
+                            if result.get('file_path') and not report_file_path:
+                                report_file_path = result.get('file_path')
+                            if result.get('content') and not report_content:
+                                report_content = result.get('content')
+                            if report_id or report_url or report_file_path:
+                                break
                     except:
                         pass
         
@@ -280,9 +330,6 @@ class ComplianceGraph:
                     preprocessed_content = json.dumps(report_data, indent=2)
                 else:
                     logger.info(f"Report downloaded and preprocessed successfully. File: {filepath}, Content length: {len(preprocessed_content)} chars")
-            else:
-                # Content already exists in state, preprocess it
-                preprocessed_content = preprocess_compliance_report(report_content)
             
             # Step 2: Use LLM with structured output to analyze the preprocessed report
             analyzer_llm = self.llm.with_structured_output(AnalysisResult)
@@ -311,6 +358,7 @@ class ComplianceGraph:
             logger.info(f"Analyzer: Found {len(remediation_plan)} remediation items. Forwarding to planner node.")
             
             # Step 4: Return state updates to be passed to planner node
+            # Note: No message returned here - planner will generate the complete output
             return {
                 "report_id": report_id,
                 "report_url": report_url,
@@ -318,8 +366,7 @@ class ComplianceGraph:
                 "report_content": preprocessed_content,
                 "summary": analysis_result.summary,
                 "remediation_plan": remediation_plan,
-                "analysis_complete": True,
-                "messages": [AIMessage(content=f"🔍 **Analysis Complete**\n\n**Devices:** {analysis_result.total_devices} total, {analysis_result.non_compliant_devices} non-compliant\n\nFound **{len(remediation_plan)}** remediation items. Building remediation plan...")]
+                "analysis_complete": True
             }
             
         except Exception as e:
@@ -331,14 +378,13 @@ class ComplianceGraph:
 
     async def _planner_node(self, state: GraphState) -> Dict[str, Any]:
         """
-        Builds the remediation plan table, generates remediation_plan_json,
-        and requests user confirmation before execution.
+        Builds the remediation plan table and generates remediation_plan_json.
+        This node does NOT call the LLM - it formats the output programmatically.
         
         Flow:
-        1. Display remediation table to user
-        2. Generate remediation_plan_json from approved items
-        3. Ask user: Execute NOW or SCHEDULE for later?
-        4. Wait for confirmation before calling execute_remediation_plan or schedule_remediation_workflow
+        1. Build remediation table from state.remediation_plan
+        2. Generate remediation_plan_json for execution tools
+        3. Return formatted message with confirmation options
         """
         logger.info("Planner: Building remediation plan")
         
@@ -350,7 +396,7 @@ class ComplianceGraph:
             for item in state.remediation_plan:
                 critical_marker = "🚨 Yes" if item.critical else "⚪ No"
                 table_rows.append(
-                    f"| {item.id} | {critical_marker} | {item.action} | {item.target} | {item.details} | {item.schedule} | [{item.status}] |"
+                    f"| {item.id} | {critical_marker} | {item.action} | {item.target} | {item.details} | {item.schedule} | {item.status} |"
                 )
                 
                 # Build the JSON action for each item
@@ -381,17 +427,19 @@ class ComplianceGraph:
             # Generate the JSON string
             remediation_plan_json = json.dumps(remediation_actions, indent=2)
             
-            table = """
+            logger.info(f"Planner: Generated remediation_plan_json with {len(remediation_actions)} actions")
+            logger.info(f"Remediation Plan JSON:\n{remediation_plan_json}")
+            
+            # Build the complete message programmatically (no LLM call needed)
+            planner_message = f"""🔍 **Analysis Complete**
+
+**Executive Summary:** {state.summary}
+
 **📋 Remediation Plan:**
 
 | # | Critical | Action | Target | Details | Schedule | Status |
 |---|----------|--------|--------|---------|----------|--------|
-""" + "\n".join(table_rows)
-
-            planner_context = f"""
-**Executive Summary:** {state.summary}
-
-{table}
+{chr(10).join(table_rows)}
 
 ---
 ⚠️ **CONFIRMATION REQUIRED**
@@ -406,49 +454,18 @@ I have prepared **{len(remediation_actions)}** remediation action(s). Before exe
 🔒 **No actions will be executed without your explicit confirmation.**
 """
             
-            logger.info(f"Planner: Generated remediation_plan_json with {len(remediation_actions)} actions")
-        else:
-            planner_context = state.summary or "Analysis pending..."
-            remediation_plan_json = None
-
-        # Create the system message with context
-        sys_msg = SystemMessage(content=get_system_prompt())
-        
-        # Add context about current state including the JSON for tools
-        context_msg = SystemMessage(content=f"""
-CURRENT ANALYSIS STATE:
-- Report ID: {state.report_id}
-- Summary: {state.summary or 'Not yet analyzed'}
-- Remediation Items: {len(state.remediation_plan)} items
-- Analysis Complete: {state.analysis_complete}
-- Pending Confirmation: True (awaiting user approval)
-
-REMEDIATION PLAN JSON (use this with execute_remediation_plan or schedule_remediation_workflow):
-```json
-{remediation_plan_json}
-```
-
-IMPORTANT INSTRUCTIONS:
-1. Present the remediation table to the user
-2. WAIT for explicit user confirmation before executing
-3. If user says "execute now" -> use execute_remediation_plan tool with the JSON above
-4. If user says "schedule for <datetime>" -> use schedule_remediation_workflow tool
-5. NEVER execute without confirmation
-
-Present the following to the user:
-{planner_context}
-""")
-
-        try:
-            response = await self.llm_with_tools.ainvoke([sys_msg, context_msg] + state.messages)
             return {
-                "messages": [response],
+                "messages": [AIMessage(content=planner_message)],
                 "remediation_plan_json": remediation_plan_json,
                 "pending_confirmation": True
             }
-        except Exception as e:
-            logger.error(f"Planner node error: {e}", exc_info=True)
-            return {"messages": [AIMessage(content=f"⚠️ Planner error: {str(e)}")]}
+        else:
+            # No remediation plan yet
+            return {
+                "messages": [AIMessage(content=state.summary or "Analysis pending...")],
+                "remediation_plan_json": None,
+                "pending_confirmation": False
+            }
 
     # ---------------- SERVE HELPERS ----------------
 
@@ -473,12 +490,53 @@ Present the following to the user:
         config = {"configurable": {"thread_id": thread_id}}
         input_data = {"messages": [HumanMessage(content=prompt)]}
         frontend_node = "compliance-chat"
+        
+        # Track current node to filter structured output from analyzer
+        current_node = None
 
         async for event in self.graph.astream_events(input_data, config, version="v2"):
             event_type = event.get("event")
             
-            # 1. Handle Text Streaming - Only stream actual LLM content to user
-            if event_type == "on_chat_model_stream":
+            # Track node transitions
+            if event_type == "on_chain_start":
+                node_name = event.get("name")
+                if node_name in ["analyzer", "planner", "chatbot"]:
+                    current_node = node_name
+                    if node_name == "analyzer":
+                        logger.info("🔍 Analyzing compliance data...")
+                    elif node_name == "planner":
+                        logger.info("📋 Building remediation plan...")
+                    elif node_name == "chatbot":
+                        logger.info("💬 Processing in chatbot...")
+
+            elif event_type == "on_chain_end":
+                node_name = event.get("name")
+                if node_name in ["analyzer", "planner", "chatbot"]:
+                    logger.info(f"✅ {node_name} completed")
+                    
+                    # For planner node: send the programmatic message since there's no LLM streaming
+                    if node_name == "planner":
+                        output = event.get("data", {}).get("output", {})
+                        messages = output.get("messages", [])
+                        if messages:
+                            for msg in messages:
+                                if hasattr(msg, "content") and msg.content:
+                                    yield {
+                                        "node": frontend_node,
+                                        "status": "streaming",
+                                        "message": msg.content
+                                    }
+                    
+                    if node_name == current_node:
+                        current_node = None
+            
+            # 1. Handle Text Streaming - Only stream from chatbot and planner nodes
+            # Skip analyzer node as it uses structured output (generates raw JSON)
+            elif event_type == "on_chat_model_stream":
+                # Skip streaming from analyzer node (structured output generates JSON)
+                if current_node == "analyzer":
+                    continue
+                    
                 chunk = event.get("data", {}).get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
                     yield {
@@ -491,18 +549,3 @@ Present the following to the user:
             elif event_type == "on_tool_start":
                 tool_name = event.get("name")
                 logger.info(f"🔧 Calling tool: {tool_name}")
-            
-            # 3. Log Node Transitions (not sent to frontend)
-            elif event_type == "on_chain_start":
-                node_name = event.get("name")
-                if node_name == "analyzer":
-                    logger.info("🔍 Analyzing compliance data...")
-                elif node_name == "planner":
-                    logger.info("📋 Building remediation plan...")
-                elif node_name == "chatbot":
-                    logger.info("💬 Processing in chatbot...")
-
-            elif event_type == "on_chain_end":
-                node_name = event.get("name")
-                if node_name in ["analyzer", "planner", "chatbot"]:
-                    logger.info(f"✅ {node_name} completed")
