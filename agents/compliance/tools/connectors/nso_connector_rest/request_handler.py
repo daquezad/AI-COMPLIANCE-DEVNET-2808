@@ -42,7 +42,7 @@ class SimpleHttpClient:
         response = client.get("tailf-ncs:devices/device")
     """
     
-    def __init__(self, username: str, password: str, base_url: str):
+    def __init__(self, username: str, password: str, base_url: str, host_header: Optional[str] = None):
         """
         Initialize the HTTP client.
         
@@ -50,14 +50,20 @@ class SimpleHttpClient:
             username: NSO username
             password: NSO password
             base_url: Base URL for RESTCONF API (e.g., http://localhost:8080/restconf/data)
+            host_header: Optional Host header override (e.g., "localhost:8080").
+                         Required when connecting via Docker's host.docker.internal
+                         as NSO may reject unrecognized Host headers.
         """
         self._base_url = base_url.rstrip('/')
         self.session = requests.Session()
         self.session.auth = HTTPBasicAuth(username, password)
-        self.session.headers.update({
+        headers = {
             'Content-Type': 'application/yang-data+json',
             'Accept': 'application/yang-data+json'
-        })
+        }
+        if host_header:
+            headers['Host'] = host_header
+        self.session.headers.update(headers)
 
     def _handle_response(self, response: requests.Response) -> tuple[str, Optional[Dict]]:
         """Handle response, including 204 No Content."""

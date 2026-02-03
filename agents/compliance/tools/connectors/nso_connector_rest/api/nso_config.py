@@ -10,9 +10,10 @@ from typing import Optional, Dict, List, Any
 from config.config import (
     NSO_USERNAME,
     NSO_PASSWORD,
-    NSO_HOST_DOWNLOAD,
+    NSO_HOST,
     NSO_JSONRPC_PORT,
-    NSO_PROTOCOL
+    NSO_PROTOCOL,
+    NSO_HOST_HEADER
 )
 from agents.compliance.tools.connectors.nso_connector_rest.request_handler import (
     SimpleHttpClient,
@@ -29,11 +30,14 @@ def get_nso_rest_client() -> SimpleHttpClient:
     Returns:
         SimpleHttpClient configured for NSO RESTCONF API
     """
-    base_url = f"{NSO_PROTOCOL}://{NSO_HOST_DOWNLOAD}:{NSO_JSONRPC_PORT}/restconf/data"
+    base_url = f"{NSO_PROTOCOL}://{NSO_HOST}:{NSO_JSONRPC_PORT}/restconf/data"
+    # Use host_header override when connecting via host.docker.internal
+    host_header = NSO_HOST_HEADER if NSO_HOST_HEADER else None
     return SimpleHttpClient(
         username=NSO_USERNAME,
         password=NSO_PASSWORD,
-        base_url=base_url
+        base_url=base_url,
+        host_header=host_header
     )
 
 
@@ -175,17 +179,31 @@ def redeploy_service(service_type: str, service_instance: str) -> Dict[str, Any]
     Redeploy a service in NSO.
     
     Args:
-        service_type: The service type (e.g., "loopback-tunisie")
-        service_instance: The service instance name (e.g., "TEST-Loopback")
+        service_type: The service type path from NSO service-type list.
+            Format from NSO: "/l3vpn:vpn/l3vpn:l3vpn" → used directly after stripping "/"
+            Simple name: "loopback-tunisie" → becomes "loopback-tunisie:loopback-tunisie"
+        service_instance: The service instance name (e.g., "TEST-Loopback", "ACME-L3VPN")
         
     Returns:
         Dict containing redeploy result or error information
     """
     client = get_nso_rest_client()
     
-    # Correct path format: tailf-ncs:services/{service-type}:{service-type}={instance}/re-deploy
-    # Example: tailf-ncs:services/loopback-tunisie:loopback-tunisie=TEST-Loopback/re-deploy
-    service_path = f"tailf-ncs:services/{service_type}:{service_type}={service_instance}/re-deploy"
+    # Strip leading slash if present
+    service_type = service_type.lstrip("/")
+    
+    logger.info(f"Re-deploy input: service_type={service_type}, service_instance={service_instance}")
+    
+    # Determine the correct path format based on service_type format
+    if ":" in service_type:
+        # Service type from NSO is already in correct format (e.g., "l3vpn:vpn/l3vpn:l3vpn")
+        # Use it directly - no manipulation needed
+        # Result: tailf-ncs:services/l3vpn:vpn/l3vpn:l3vpn=ACME-L3VPN/re-deploy
+        service_path = f"tailf-ncs:services/{service_type}={service_instance}/re-deploy"
+    else:
+        # Simple service name (e.g., "loopback-tunisie") - duplicate as module:type
+        # Result: tailf-ncs:services/loopback-tunisie:loopback-tunisie=TEST-Loopback/re-deploy
+        service_path = f"tailf-ncs:services/{service_type}:{service_type}={service_instance}/re-deploy"
     
     logger.info(f"Re-deploying service at path: {service_path}")
     response = client.post(service_path)
@@ -262,4 +280,35 @@ def get_device_templates() -> Dict[str, Any]:
         return {"success": True, "templates": template_names, "count": len(template_names)}
     else:
         logger.error("Failed to get device templates: %s", response.text)
+        return {"success": False, "error": response.text, "status_code": response.status_code}
+
+
+def get_service_types() -> Dict[str, Any]:
+    """
+    Get the list of available service types from NSO via RESTCONF.
+    
+    Returns:
+        Dict containing service types list or error information
+    """
+    client = get_nso_rest_client()
+    
+    # Use the service-type endpoint
+    response = client.get("tailf-ncs:services/service-type")
+    
+    if response.ok:
+        # Parse the response to extract service type names
+        data = response.json
+        service_types = []
+        
+        # The response format is: {"tailf-ncs:service-type": [{"name": "/l3vpn:vpn/l3vpn:l3vpn"}, ...]}
+        service_type_list = data.get("tailf-ncs:service-type", [])
+        for item in service_type_list:
+            svc_name = item.get("name")
+            if svc_name:
+                service_types.append(svc_name)
+        
+        logger.info("Found %d service types: %s", len(service_types), service_types)
+        return {"success": True, "service_types": service_types, "count": len(service_types)}
+    else:
+        logger.error("Failed to get service types: %s", response.text)
         return {"success": False, "error": response.text, "status_code": response.status_code}

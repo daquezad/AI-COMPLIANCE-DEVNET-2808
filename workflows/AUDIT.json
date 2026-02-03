@@ -1,0 +1,16 @@
+{
+    "id": "DEVNET-AUDIT-1",
+    "name": "AUDIT_Compliance_Report",
+    "start": "Begin",
+    "states": [
+        {
+            "end": true,
+            "name": "Begin",
+            "type": "operation",
+            "actions": []
+        }
+    ],
+    "version": "1.0",
+    "description": "Executes compliance reports",
+    "specVersion": "0.8"
+}

@@ -229,6 +229,11 @@ def list_nso_compliance_results() -> Dict[str, Any]:
         success: True if query was successful
         data: Raw NSO output containing all report results with their metadata
     
+    ⚠️ DISPLAY AS TABLE:
+    | # | Report ID | Report Name | Title | Time | Status |
+    |---|-----------|-------------|-------|------|--------|
+    | 1 | 5 | audit-name | Title | 2026-02-01 | ✅/❌ |
+    
     Example Usage:
         - "Show me all compliance reports results" → list_nso_compliance_results()
         - "What audits have been run?" → list_nso_compliance_results()
@@ -365,6 +370,11 @@ def list_nso_compliance_report_definitions() -> Dict[str, Any]:
         success: True if query was successful
         data: NSO output showing all report definitions
         reports: List of report names (if successful)
+    
+    ⚠️ DISPLAY AS TABLE:
+    | # | Report Name | Device Checks | Template Checks | Service Checks |
+    |---|-------------|---------------|-----------------|----------------|
+    | 1 | weekly-audit | ✅ all-devices | ntp_baseline | l3vpn |
     
     Example Response:
         {
@@ -514,6 +524,12 @@ def list_nso_service_types() -> Dict[str, Any]:
         service_types: List of service type names (e.g., ['loopback-demo:loopback-demo'])
         count: Number of service types found
     
+    ⚠️ DISPLAY AS TABLE:
+    | # | Service Type |
+    |---|-------------|
+    | 1 | /l3vpn:vpn/l3vpn:l3vpn |
+    | 2 | /loopback:loopback |
+    
     Example Output:
         {
             "success": True,
@@ -534,12 +550,10 @@ def list_nso_service_types() -> Dict[str, Any]:
     """
     logger.info("LLM Tool Call: list_nso_service_types")
     try:
-        service_types = _manager.list_service_types()
-        return {
-            "success": True,
-            "service_types": service_types,
-            "count": len(service_types)
-        }
+        # Use REST API instead of CLI
+        from agents.compliance.tools.connectors.nso_connector_rest.api.nso_config import get_service_types
+        result = get_service_types()
+        return result
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -567,6 +581,12 @@ def list_nso_compliance_templates() -> Dict[str, Any]:
         success: True if query was successful
         templates: List of compliance template names (e.g., ['ntp_dns', 'acl-baseline'])
         count: Number of templates found
+    
+    ⚠️ DISPLAY AS TABLE:
+    | # | Template Name |
+    |---|---------------|
+    | 1 | ntp_dns |
+    | 2 | acl-baseline |
     
     Example Output:
         {
@@ -705,6 +725,12 @@ def list_nso_device_groups() -> Dict[str, Any]:
         success: True if query was successful
         device_groups: List of device group names available in NSO
         count: Number of device groups found
+    
+    ⚠️ DISPLAY AS TABLE:
+    | # | Device Group |
+    |---|-------------|
+    | 1 | dc-core-routers |
+    | 2 | wan-edge |
     
     Example Usage:
         1. Call list_nso_device_groups() to see available groups

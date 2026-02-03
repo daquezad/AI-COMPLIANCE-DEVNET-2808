@@ -136,6 +136,11 @@ def list_cwm_available_workflows() -> Dict[str, Any]:
         - workflows: List of available workflow definitions
         - error: Error message if request failed
     
+    ⚠️ DISPLAY AS TABLE:
+    | # | Workflow ID | Name | Version | Description |
+    |---|-------------|------|---------|-------------|
+    | 1 | AUDIT_Compliance_Report | Audit | 1.0 | Run compliance audit |
+    
     Example Usage:
         - "What workflows are available in CWM?"
         - "List all remediation workflows"
@@ -415,11 +420,73 @@ def schedule_remediation_workflow(
             # If not valid JSON, treat as comma-separated string
             devices_list = [d.strip() for d in devices.split(",")]
     
+    # Transform remediation_items to the format expected by CWM workflow
+    # Expected format: {"items": [{id, action, target, template_name/service_type/service_instance}, ...]}
+    transformed_items = None
+    if remediation_items:
+        try:
+            parsed = json.loads(remediation_items) if isinstance(remediation_items, str) else remediation_items
+            
+            # If it has 'details' field with actual item objects, use that
+            if isinstance(parsed, dict) and "details" in parsed:
+                details = parsed["details"]
+                transformed = []
+                for item in details:
+                    action = item.get("action", "").lower()
+                    transformed_item = {
+                        "id": item.get("id"),
+                        "action": action
+                    }
+                    
+                    if action == "apply-template":
+                        # Extract template_name from 'details' field
+                        transformed_item["template_name"] = item.get("details", item.get("template_name", ""))
+                        # Build target structure
+                        target_device = item.get("target")
+                        if target_device:
+                            transformed_item["target"] = {"device_name": target_device}
+                    
+                    elif action == "re-deploy":
+                        # Parse service path from 'details' (e.g., "vpn/l3vpn/ACME-L3VPN")
+                        details_str = item.get("details", "")
+                        if "/" in details_str:
+                            parts = details_str.rsplit("/", 1)
+                            service_path = parts[0] if len(parts) > 1 else ""
+                            service_instance = parts[-1]
+                            # Try to format service_type properly
+                            if ":" not in service_path and "/" in service_path:
+                                # e.g., "vpn/l3vpn" -> "l3vpn:vpn/l3vpn"
+                                path_parts = service_path.split("/")
+                                module = path_parts[-1]
+                                transformed_item["service_type"] = f"{module}:{service_path}"
+                            else:
+                                transformed_item["service_type"] = service_path
+                            transformed_item["service_instance"] = service_instance
+                        else:
+                            transformed_item["service_type"] = item.get("target", "")
+                            transformed_item["service_instance"] = details_str
+                    
+                    elif action == "sync-to":
+                        target_device = item.get("target")
+                        if target_device:
+                            transformed_item["target"] = {"device_names": [target_device] if isinstance(target_device, str) else target_device}
+                    
+                    transformed.append(transformed_item)
+                
+                transformed_items = json.dumps(transformed)
+                logger.info(f"Transformed remediation items: {transformed_items[:200]}...")
+            else:
+                # Use as-is if already in expected format
+                transformed_items = remediation_items
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Failed to transform remediation_items: {e}")
+            transformed_items = remediation_items
+
     return _schedule_remediation_workflow(
         scheduled_datetime=scheduled_datetime,
         description=description,
         devices=devices_list,
-        remediation_items=remediation_items
+        remediation_items=transformed_items
     )
 
 
@@ -447,6 +514,11 @@ def list_cwm_schedules(prefix_filter: str = "AI") -> Dict[str, Any]:
         - filtered_count: Number matching the prefix filter
         - schedules: List of schedules with ID, Note, Spec, NextActionTimes, Paused
         - error: Error message if failed
+    
+    ⚠️ DISPLAY AS TABLE:
+    | # | Schedule ID | Note | Cron | Next Run | Status |
+    |---|-------------|------|------|----------|--------|
+    | 1 | AI-20260201-audit | Weekly audit | 0 6 * * 1 | Mon 06:00 | ▶️ Active |
     
     Example Usage:
         - "Show me all scheduled audits"

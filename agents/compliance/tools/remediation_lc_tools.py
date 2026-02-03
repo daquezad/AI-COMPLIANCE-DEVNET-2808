@@ -317,8 +317,8 @@ def execute_remediation_plan(remediation_plan_json: str) -> Dict[str, Any]:
             {
                 "id": 2,
                 "action": "re-deploy",
-                "service_type": "ntp",
-                "service_instance": "ntp-config-001"
+                "service_type": "/l3vpn:vpn/l3vpn",
+                "service_instance": "ACME-L3VPN"
             },
             {
                 "id": 3,

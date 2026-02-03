@@ -220,7 +220,8 @@ def schedule_cwm_workflow(
     paused: bool = False,
     trigger_immediately: bool = False,
     tags: Optional[List[str]] = None,
-    note: Optional[str] = None
+    note: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Schedule a workflow in Crosswork Workflow Manager (CWM).
@@ -270,7 +271,8 @@ def schedule_cwm_workflow(
         "paused": paused,
         "triggerImmediately": trigger_immediately,
         "tags": tags or [],
-        "note": note or ""
+        "note": note or "",
+        "data": data or {}
     }
     
     logger.info(f"Creating CWM schedule: {unique_schedule_id} (workflow: {workflow_name} v{workflow_version})")
@@ -295,10 +297,11 @@ def schedule_cwm_workflow(
 
 
 # Predefined cron expressions for audit scheduling
+# Standard 5-field cron format: minute hour day-of-month month day-of-week
 AUDIT_CRON_SCHEDULES = {
-    "DAILY": "0 0 6 * * *",      # Every day at 6:00 AM
-    "WEEKLY": "0 0 6 * * 1",      # Every Monday at 6:00 AM
-    "MONTHLY": "0 0 6 1 * *",     # 1st of every month at 6:00 AM
+    "DAILY": "0 6 * * *",        # Every day at 6:00 AM
+    "WEEKLY": "0 6 * * 1",       # Every Monday at 6:00 AM
+    "MONTHLY": "0 6 1 * *",      # 1st of every month at 6:00 AM
 }
 
 
@@ -485,17 +488,31 @@ def schedule_remediation_workflow(
     
     # Fixed values
     workflow_name = "FIX_Compliance_Remediation"
-    workflow_version = "1.0"
+    workflow_version = "2.0"
     tags = ["AI", "REMEDIATION", "daquezad"]
     
-    # Build workflow input data
-    workflow_data = {
-        "description": description,
-    }
-    if devices:
-        workflow_data["devices"] = devices
+    # Build workflow input data - only include remediation_plan for the workflow
+    workflow_data = {}
+    
     if remediation_items:
-        workflow_data["remediation_items"] = remediation_items
+        # Parse remediation_items if it's a JSON string
+        parsed_plan = remediation_items
+        if isinstance(remediation_items, str):
+            try:
+                parsed_plan = json.loads(remediation_items)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse remediation_items as JSON: {remediation_items[:100]}...")
+                parsed_plan = remediation_items
+        
+        # Extract the items array if the structure is {"items": [...]}
+        if isinstance(parsed_plan, dict) and "items" in parsed_plan:
+            workflow_data["remediation_plan"] = parsed_plan["items"]
+        elif isinstance(parsed_plan, list):
+            # Already an array, use directly
+            workflow_data["remediation_plan"] = parsed_plan
+        else:
+            # Use as-is (might be the full dict)
+            workflow_data["remediation_plan"] = parsed_plan
     
     # Note is the description from LLM
     note = f"One-time remediation: {description}"
@@ -513,6 +530,7 @@ def schedule_remediation_workflow(
         tags=tags,
         note=note,
         trigger_immediately=False,  # Never trigger immediately for scheduled remediation
+        data=workflow_data,
     )
     
     # Enhance result with remediation-specific info

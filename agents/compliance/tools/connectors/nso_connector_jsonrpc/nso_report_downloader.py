@@ -8,7 +8,7 @@ import logging
 import requests
 from typing import Optional, Tuple
 from pathlib import Path
-from config.config import NSO_PASSWORD, NSO_JSONRPC_PORT, NSO_HOST_DOWNLOAD, NSO_USERNAME, NSO_PROTOCOL
+from config.config import NSO_PASSWORD, NSO_JSONRPC_PORT, NSO_HOST_DOWNLOAD, NSO_USERNAME, NSO_PROTOCOL, NSO_HOST_HEADER
 
 logger = logging.getLogger("devnet.compliance.tools.nso.downloader")
 
@@ -38,7 +38,8 @@ class NSOReportDownloader:
         password: str = NSO_PASSWORD,
         protocol: str = NSO_PROTOCOL,
         verify_ssl: bool = False,
-        download_dir: Optional[str] = None
+        download_dir: Optional[str] = None,
+        host_header: Optional[str] = NSO_HOST_HEADER or None
     ):
         """
         Initialize the NSO Report Downloader.
@@ -51,6 +52,9 @@ class NSOReportDownloader:
             protocol: http or https
             verify_ssl: Whether to verify SSL certificates
             download_dir: Directory to save downloaded reports
+            host_header: Optional Host header override (e.g., "localhost:8080").
+                         Required when connecting via Docker's host.docker.internal
+                         as NSO may reject unrecognized Host headers.
         """
         self.host = host
         self.port = port
@@ -59,6 +63,7 @@ class NSOReportDownloader:
         self.protocol = protocol
         self.verify_ssl = verify_ssl
         self.download_dir = download_dir or REPORTS_DOWNLOAD_DIR
+        self.host_header = host_header
         
         self.base_url = f"{protocol}://{host}:{port}"
         self.jsonrpc_url = f"{self.base_url}/jsonrpc"
@@ -75,6 +80,9 @@ class NSOReportDownloader:
             True if login successful, False otherwise
         """
         self.session = requests.Session()
+        # Set Host header in session headers if provided (for Docker host.docker.internal workaround)
+        if self.host_header:
+            self.session.headers.update({"Host": self.host_header})
         headers = {"Content-Type": "application/json"}
         
         login_payload = {

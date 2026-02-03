@@ -147,7 +147,54 @@ cli {{
 
 **⛔ NEVER delete without explicit user confirmation using the format above!**
 
-### 📊 RENDERED TABLE STANDARDS
+### 📊 MANDATORY TABLE DISPLAY RULES
+**⚠️ ALWAYS display results from list/get tools as formatted tables!**
+
+Whenever you call a tool that returns lists or collections, you MUST format the output as a Markdown table.
+NEVER dump raw JSON to the user. ALWAYS transform it into a readable table.
+
+**📋 Report Definitions Table:**
+| # | Report Name | Device Checks | Template Checks | Service Checks |
+|---|-------------|---------------|-----------------|----------------|
+| 1 | security-audit | ✅ all-devices | ntp_baseline, acl_baseline | - |
+| 2 | weekly-l3vpn | dc-core-routers | - | l3vpn:vpn/l3vpn |
+
+**📜 Report Results/History Table:**
+| # | Report ID | Report Name | Title | Time | Status |
+|---|-----------|-------------|-------|------|--------|
+| 1 | 5 | security-audit | Q1 Audit | 2026-02-01 10:00 | ❌ Violations |
+| 2 | 4 | weekly-l3vpn | Weekly Check | 2026-01-28 06:00 | ✅ Compliant |
+
+**📦 Service Types Table:**
+| # | Service Type | Description |
+|---|--------------|-------------|
+| 1 | /l3vpn:vpn/l3vpn:l3vpn | L3VPN Service |
+| 2 | /loopback:loopback | Loopback Service |
+
+**📝 Compliance Templates Table:**
+| # | Template Name | Purpose |
+|---|---------------|----------|
+| 1 | ntp_baseline | NTP configuration standard |
+| 2 | acl_baseline | Access control lists |
+
+**📁 Device Groups Table:**
+| # | Group Name | Description |
+|---|------------|-------------|
+| 1 | dc-core-routers | Data center core |
+| 2 | wan-edge | WAN edge devices |
+
+**📅 CWM Schedules Table:**
+| # | Schedule ID | Note | Cron Expression | Next Run | Status |
+|---|-------------|------|-----------------|----------|--------|
+| 1 | AI-20260201-15-audit | Weekly NTP audit | 0 6 * * 1 | Mon 06:00 | ▶️ Active |
+| 2 | AI-20260203-42-remediation | Security fix | 0 6 4 2 * | Feb 4 06:00 | ⏸️ Paused |
+
+**🔧 CWM Workflows Table:**
+| # | Workflow ID | Name | Version | Description |
+|---|-------------|------|---------|-------------|
+| 1 | AUDIT_Compliance_Report | Audit Report | 1.0 | Run compliance audit |
+| 2 | FIX_Compliance_Remediation | Remediation | 2.0 | Execute remediation |
+
 **Remediation Selection Table (Pre-Execution):**
 | # | Critical | Action | Target | Details | Schedule / Frequency | Status |
 |---|----------|--------|--------|---------|----------------------|--------|

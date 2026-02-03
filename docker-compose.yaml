@@ -1,15 +1,15 @@
 services:
-  slim:
-    image: ghcr.io/agntcy/slim:0.6.1
-    container_name: slim-devnet
-    ports:
-      - "46357:46357"
-    environment:
-      - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
-      - CONFIG_PATH=/config.yaml
-    volumes:
-      - ./config/docker/slim/server-config.yaml:/config.yaml
-    command: ["/slim", "--config", "/config.yaml"]
+  # slim:
+  #   image: ghcr.io/agntcy/slim:0.6.1
+  #   container_name: slim-devnet
+  #   ports:
+  #     - "46357:46357"
+  #   environment:
+  #     - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
+  #     - CONFIG_PATH=/config.yaml
+  #   volumes:
+  #     - ./config/docker/slim/server-config.yaml:/config.yaml
+  #   command: ["/slim", "--config", "/config.yaml"]
 
   ui:
     build:
@@ -34,7 +34,7 @@ services:
       dockerfile: docker/Dockerfile.compliance-agent
     image: ghcr.io/devnet/compliance-agent:latest
     env_file:
-      - .env
+      - .env.prod
     environment:
       - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
       - TRANSPORT_SERVER_ENDPOINT=http://slim:46357

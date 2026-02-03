@@ -1,0 +1,22 @@
+{
+    "id": "FIX_Compliance_Remediation-1.0",
+    "name": "FIX_Compliance_Remediation",
+    "start": "Begin",
+    "states": [
+        {
+            "name": "Begin",
+            "type": "operation",
+            "actions": [],
+            "transition": "Sleep 1"
+        },
+        {
+            "end": true,
+            "name": "Sleep 1",
+            "type": "sleep",
+            "duration": "PT30S"
+        }
+    ],
+    "version": "1.0",
+    "description": "Automated_Compliance_Remediation_Engine",
+    "specVersion": "0.8"
+}
