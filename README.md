@@ -252,7 +252,7 @@ npm run format
 
 ## 📜 License
 
-<!-- Add your license here -->
+Apache-2.0 license
 
 ---
 
