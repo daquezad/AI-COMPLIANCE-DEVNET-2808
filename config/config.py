@@ -61,4 +61,5 @@ NSO_REPORTS_DIR = os.getenv("NSO_REPORTS_DIR", "/tmp/compliance-reports")
 # NSO_HOST_DOWNLOAD uses NSO_HOST by default
 NSO_HOST_DOWNLOAD = os.getenv("NSO_HOST_DOWNLOAD", "localhost")
 # NSO_HOST_HEADER overrides HTTP Host header (needed when using host.docker.internal)
-NSO_HOST_HEADER = os.getenv("NSO_HOST_HEADER", "")
+NSO_HOST_REST = os.getenv("NSO_HOST_REST", "")
+NSO_HOST_HEADER=os.getenv("NSO_HOST_HEADER", "")

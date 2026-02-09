@@ -264,7 +264,7 @@ class NSOComplianceManager:
 
     def show_compliance_templates(self, template_name: Optional[str] = None) -> str:
         """Shows configuration for one or all compliance templates."""
-        cmd = "show configuration compliance template"
+        cmd = "show running-config compliance template"
         if template_name:
             cmd += f" {template_name}"
         return self.client.execute_read(cmd)

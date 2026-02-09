@@ -10,8 +10,7 @@ from config.config import (
     NSO_CLI_PORT,
     NSO_USERNAME,
     NSO_PASSWORD,
-    NSO_CLI_PROTOCOL,
-    NSO_HOST_DOWNLOAD
+    NSO_CLI_PROTOCOL
 )
 
 # Initialize the requested logger
@@ -62,7 +61,17 @@ def generate_testbed_from_env() -> str:
                         "protocol": NSO_CLI_PROTOCOL,
                         "ip": NSO_HOST,
                         "port": NSO_CLI_PORT,
-                        "ssh_options": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+                        "ssh_options": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+                        "arguments": {
+                            "connection_timeout": 60,
+                            "login_timeout": 30,
+                            "init_exec_commands": [],
+                            "init_config_commands": []
+                        },
+                        "settings": {
+                            "GRACEFUL_DISCONNECT_WAIT_SEC": 1,
+                            "POST_DISCONNECT_WAIT_SEC": 1
+                        }
                     }
                 },
                 "credentials": {
@@ -102,6 +111,7 @@ class NSOCLIClient:
             testbed_path: Path to testbed YAML file. If None, generates from environment variables.
             device_name: Name of the NSO device in the testbed (default: "nso")
         """
+        logger.info(f"here{NSO_HOST}")
         # If no testbed path provided, generate from environment variables
         if testbed_path is None:
             testbed_path = generate_testbed_from_env()

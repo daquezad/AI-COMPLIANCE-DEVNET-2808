@@ -36,7 +36,7 @@ from agents.compliance.tools.connectors.nso_connector_rest import (
 )
 from config.config import NSO_HOST, NSO_JSONRPC_PORT, NSO_PROTOCOL, NSO_USERNAME
 
-
+NSO_HOST="localhost"
 def print_header(title: str):
     """Print a formatted header."""
     print("\n" + "=" * 60)

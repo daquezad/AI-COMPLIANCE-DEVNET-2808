@@ -10,10 +10,9 @@ from typing import Optional, Dict, List, Any
 from config.config import (
     NSO_USERNAME,
     NSO_PASSWORD,
-    NSO_HOST,
+    NSO_HOST_REST,
     NSO_JSONRPC_PORT,
     NSO_PROTOCOL,
-    NSO_HOST_HEADER
 )
 from agents.compliance.tools.connectors.nso_connector_rest.request_handler import (
     SimpleHttpClient,
@@ -30,9 +29,9 @@ def get_nso_rest_client() -> SimpleHttpClient:
     Returns:
         SimpleHttpClient configured for NSO RESTCONF API
     """
-    base_url = f"{NSO_PROTOCOL}://{NSO_HOST}:{NSO_JSONRPC_PORT}/restconf/data"
+    base_url = f"{NSO_PROTOCOL}://{NSO_HOST_REST}:{NSO_JSONRPC_PORT}/restconf/data"
     # Use host_header override when connecting via host.docker.internal
-    host_header = NSO_HOST_HEADER if NSO_HOST_HEADER else None
+    host_header = f"{NSO_HOST_REST}:{NSO_JSONRPC_PORT}"
     return SimpleHttpClient(
         username=NSO_USERNAME,
         password=NSO_PASSWORD,
